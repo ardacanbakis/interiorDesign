@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
+import { boundingBox } from '../geometry/polygon.ts';
 import { normalize, perpendicular, sub, vec2 } from '../geometry/vec2.ts';
 import { extractFaces } from './faces.ts';
-import { drawRoomRect, drawWallRun, moveWallSideways, setWallLength } from './operations.ts';
+import {
+  createRoomFromInnerSize,
+  drawRoomRect,
+  drawWallRun,
+  moveWallSideways,
+  setWallLength,
+} from './operations.ts';
+import { roomGeometry } from './roomGeometry.ts';
 import {
   allWalls,
   EMPTY_GRAPH,
@@ -69,6 +77,139 @@ describe('drawRoomRect', () => {
     const result = drawRoomRect(shell, vec2(2000, 0), vec2(4000, 4000), 'interior');
 
     expect(result.splits.length).toBeGreaterThan(0);
+  });
+});
+
+describe('createRoomFromInnerSize', () => {
+  /**
+   * The central claim: type a measurement, get a room that measures it.
+   *
+   * These assert against `roomGeometry`, which computes the floor from the
+   * inner faces of the walls — the same calculation the app shows the user —
+   * rather than against the centreline rectangle this function actually builds.
+   * That is the whole point: the two differ by a wall thickness, and only one
+   * of them is what a tape measure reports.
+   */
+  it('produces a floor of exactly the size asked for', () => {
+    const { graph } = createRoomFromInnerSize(EMPTY_GRAPH, {
+      width: 3600,
+      depth: 4200,
+      thickness: 100,
+    });
+
+    const room = roomGeometry(graph, extractFaces(graph)[0]!);
+    expect(room.area).toBe(3600 * 4200);
+  });
+
+  it('holds at every wall thickness', () => {
+    // A thicker wall must push the centrelines further out, not eat the floor.
+    for (const thickness of [80, 100, 135, 250, 300]) {
+      const { graph } = createRoomFromInnerSize(EMPTY_GRAPH, {
+        width: 3600,
+        depth: 4200,
+        thickness,
+      });
+
+      const room = roomGeometry(graph, extractFaces(graph)[0]!);
+      expect(room.area, `thickness ${thickness}`).toBe(3600 * 4200);
+
+      const box = boundingBox(room.outline);
+      expect(box.maxX - box.minX, `thickness ${thickness}`).toBe(3600);
+      expect(box.maxY - box.minY, `thickness ${thickness}`).toBe(4200);
+    }
+  });
+
+  it('stays exact at an odd wall thickness', () => {
+    // 135mm (brick plus plaster) halves to 67.5. Rounding both outer corners
+    // independently pushes each outwards and the room comes back a millimetre
+    // too big in each direction.
+    const { graph } = createRoomFromInnerSize(EMPTY_GRAPH, {
+      width: 3600,
+      depth: 4200,
+      thickness: 135,
+    });
+
+    const box = boundingBox(roomGeometry(graph, extractFaces(graph)[0]!).outline);
+    expect(box.maxX - box.minX).toBe(3600);
+    expect(box.maxY - box.minY).toBe(4200);
+  });
+
+  it('puts the inside corner at the origin it was given', () => {
+    const { graph } = createRoomFromInnerSize(EMPTY_GRAPH, {
+      width: 3000,
+      depth: 2000,
+      thickness: 100,
+      origin: vec2(5000, 7000),
+    });
+
+    const box = boundingBox(roomGeometry(graph, extractFaces(graph)[0]!).outline);
+    expect(box).toEqual({ minX: 5000, minY: 7000, maxX: 8000, maxY: 9000 });
+  });
+
+  it('builds the walls at the thickness asked for', () => {
+    const { graph } = createRoomFromInnerSize(EMPTY_GRAPH, {
+      width: 3000,
+      depth: 2000,
+      thickness: 135,
+    });
+
+    for (const wall of allWalls(graph)) {
+      expect(wall.thickness).toBe(135);
+    }
+  });
+
+  it('is a closed room with four walls', () => {
+    const { graph } = createRoomFromInnerSize(EMPTY_GRAPH, {
+      width: 3000,
+      depth: 2000,
+      thickness: 100,
+    });
+
+    expect(allWalls(graph)).toHaveLength(4);
+    expect(extractFaces(graph)).toHaveLength(1);
+  });
+
+  it('ignores a room with no size', () => {
+    expect(
+      createRoomFromInnerSize(EMPTY_GRAPH, { width: 0, depth: 2000, thickness: 100 }).graph,
+    ).toBe(EMPTY_GRAPH);
+    expect(
+      createRoomFromInnerSize(EMPTY_GRAPH, { width: 3000, depth: -5, thickness: 100 }).graph,
+    ).toBe(EMPTY_GRAPH);
+  });
+
+  it('shares walls with a room it is placed against', () => {
+    // Proof that a room created this way is an ordinary part of a plan and can
+    // grow into a house later, not a special case.
+    const first = createRoomFromInnerSize(EMPTY_GRAPH, {
+      width: 3000,
+      depth: 3000,
+      thickness: 100,
+    }).graph;
+
+    // Butt a second room up against the first one's right-hand wall.
+    const second = createRoomFromInnerSize(first, {
+      width: 2000,
+      depth: 3000,
+      thickness: 100,
+      origin: vec2(3100, 0),
+    }).graph;
+
+    expect(extractFaces(second)).toHaveLength(2);
+
+    // One wall on the boundary between them, not two back to back.
+    const shared = allWalls(second).filter((wall) => {
+      const a = nodePoint(second, wall.a);
+      const b = nodePoint(second, wall.b);
+      return a.x === 3050 && b.x === 3050;
+    });
+    expect(shared).toHaveLength(1);
+
+    // And both rooms still measure what was typed.
+    const areas = extractFaces(second)
+      .map((face) => roomGeometry(second, face).area)
+      .sort((left, right) => right - left);
+    expect(areas).toEqual([3000 * 3000, 2000 * 3000]);
   });
 });
 

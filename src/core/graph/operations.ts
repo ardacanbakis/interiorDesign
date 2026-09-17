@@ -16,7 +16,7 @@ import {
   add,
   type Vec2,
 } from '../geometry/vec2.ts';
-import { type Mm } from '../units/length.ts';
+import { roundMm, type Mm } from '../units/length.ts';
 import {
   getWall,
   incidentWalls,
@@ -35,6 +35,58 @@ export interface OperationResult {
   readonly splits: readonly WallSplit[];
 }
 
+export interface RoomSizeSpec {
+  /** Clear distance between the wall faces, left to right. */
+  readonly width: Mm;
+  /** Clear distance between the wall faces, front to back. */
+  readonly depth: Mm;
+  readonly thickness: Mm;
+  readonly kind?: WallKind;
+  /** Inside corner the room grows from. Defaults to the origin. */
+  readonly origin?: Vec2;
+}
+
+/**
+ * Build a room from the measurements someone actually took.
+ *
+ * This is the distinction the whole function exists for. A tape measure reports
+ * the distance between wall *faces*; the graph stores wall *centrelines*. Typing
+ * 3600 x 4200 has to produce a room whose usable floor is 3600 x 4200, which
+ * means the centreline rectangle is one wall thickness larger in each direction
+ * — half a wall at each end.
+ *
+ * Getting this backwards is not a rounding error. It makes every room silently
+ * smaller than the number typed into it, by 100mm in a partitioned room and
+ * 250mm against an exterior wall, which is the difference between a wardrobe
+ * fitting and not.
+ */
+export function createRoomFromInnerSize(graph: WallGraph, spec: RoomSizeSpec): OperationResult {
+  const origin = spec.origin ?? { x: 0, y: 0 };
+  const half = spec.thickness / 2;
+
+  if (spec.width <= 0 || spec.depth <= 0) return { graph, splits: [] };
+
+  // Grow outwards from the inner rectangle by half a wall on every side, so the
+  // centrelines land where they have to for the floor to measure what was asked.
+  //
+  // Only one corner is rounded; the opposite one is derived from it. An odd
+  // thickness — 135mm is an ordinary brick-and-plaster wall — gives a half of
+  // 67.5, and rounding both corners independently pushes each of them outwards,
+  // so a room asked for as 3600 comes back as 3601. Deriving the far corner
+  // keeps the centreline span at exactly `width + thickness` however the halves
+  // fall, which is what makes the floor exact.
+  const left = roundMm(origin.x - half);
+  const top = roundMm(origin.y - half);
+
+  return drawRoomRect(
+    graph,
+    { x: left, y: top },
+    { x: left + spec.width + spec.thickness, y: top + spec.depth + spec.thickness },
+    spec.kind ?? 'exterior',
+    spec.thickness,
+  );
+}
+
 /**
  * Draw a rectangular room from two opposite corners.
  *
@@ -51,6 +103,7 @@ export function drawRoomRect(
   from: Vec2,
   to: Vec2,
   kind: WallKind = 'exterior',
+  thickness?: Mm,
 ): OperationResult {
   const left = Math.min(from.x, to.x);
   const right = Math.max(from.x, to.x);
@@ -72,6 +125,7 @@ export function drawRoomRect(
   for (let index = 0; index < corners.length; index++) {
     const result = insertWall(working, corners[index]!, corners[(index + 1) % corners.length]!, {
       kind,
+      ...(thickness === undefined ? {} : { thickness }),
     });
     working = result.graph;
     splits.push(...result.splits);

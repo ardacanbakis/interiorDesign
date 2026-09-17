@@ -35,10 +35,17 @@ export const RoomsLayer = memo(function RoomsLayer({
             // Even-odd so the holes punched by columns and partitions read as
             // holes rather than as overlapping fills.
             fillRule="evenodd"
-            fill={selected ? 'var(--color-accent-500)' : 'var(--plan-room-fill)'}
-            fillOpacity={selected ? 0.18 : 1}
+            // Opaque whether selected or not. A translucent selection tint lets
+            // the grid show through the room while its neighbours hide it,
+            // which reads as noise rather than as selection — so the tint is
+            // mixed into the fill instead of layered over it.
+            fill={
+              selected
+                ? 'color-mix(in oklab, var(--color-accent-500) 14%, var(--plan-room-fill))'
+                : 'var(--plan-room-fill)'
+            }
             stroke={selected ? 'var(--color-accent-500)' : 'none'}
-            strokeWidth={selected ? screenPixels(viewport, 1.5) : 0}
+            strokeWidth={selected ? screenPixels(viewport, 2) : 0}
             data-testid={`room-${room.props.id}`}
             data-room-name={room.props.name}
             style={{ cursor: onSelectRoom ? 'pointer' : 'default' }}

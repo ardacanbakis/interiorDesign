@@ -23,7 +23,11 @@ import {
   type ItemId,
   type OpeningId,
 } from '../core/model/schema.ts';
-import { type RoomId } from '../core/graph/roomIdentity.ts';
+import { type RoomId, type RoomType } from '../core/graph/roomIdentity.ts';
+import { createRoomFromInnerSize } from '../core/graph/operations.ts';
+import { allNodes } from '../core/graph/wallGraph.ts';
+import { boundingBox } from '../core/geometry/polygon.ts';
+import { type Mm } from '../core/units/length.ts';
 import { type NodeId, type WallId } from '../core/graph/wallGraph.ts';
 import { type LengthUnit } from '../core/units/length.ts';
 import {
@@ -57,6 +61,27 @@ export type SelectionMode = 'replace' | 'add' | 'toggle';
  * the house while trying to click on it.
  */
 export type ToolId = 'select' | 'draw-room' | 'draw-wall';
+
+export interface NewRoomSpec {
+  /** Clear distance between wall faces. */
+  readonly width: Mm;
+  readonly depth: Mm;
+  readonly thickness: Mm;
+  readonly ceilingHeight: Mm;
+  readonly name: string;
+  readonly type: RoomType;
+}
+
+/**
+ * Gap left between a new room and anything already on the floor.
+ *
+ * A room added to a plan that already has one is placed clear of it rather than
+ * butted against it. Sharing a wall would be the nicer default for a house, but
+ * which side to share is a guess, and a wrong guess is harder to undo than
+ * dragging a room that is plainly separate. One metre reads unambiguously as
+ * "not attached yet".
+ */
+const NEW_ROOM_GAP: Mm = 1000;
 
 export interface Viewport {
   /** Model coordinates at the centre of the view. */
@@ -98,6 +123,15 @@ export interface EditorStore {
   newDocument: () => void;
   markSaved: () => void;
   setDisplayUnit: (unit: LengthUnit) => void;
+
+  /**
+   * Build a room from typed measurements and select it.
+   *
+   * The dimensions are the ones a tape measure gives — the clear distance
+   * between wall faces — not the centrelines the graph stores. See
+   * `createRoomFromInnerSize`.
+   */
+  createRoom: (spec: NewRoomSpec) => void;
 
   // ---- Session actions ----
   setActiveFloor: (floorId: FloorId) => void;
@@ -211,6 +245,54 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     get().commit('Change units', (draft) => {
       draft.unit = unit;
     });
+  },
+
+  createRoom: (spec) => {
+    const floorId = get().activeFloorId;
+    const floor = get().document.floors.find((entry) => entry.id === floorId);
+    if (!floor) return;
+
+    // Everything is worked out here, against the committed state, rather than
+    // inside the Immer recipe. That keeps it to a single undo step: adding a
+    // room and naming it is one action to the person who did it, so pressing
+    // ctrl-Z once has to remove both.
+
+    // Clear of anything already drawn, so a second room never lands on top of
+    // the first.
+    const existingNodes = allNodes(floor.graph).map((node) => ({ x: node.x, y: node.y }));
+    const origin =
+      existingNodes.length === 0
+        ? { x: 0, y: 0 }
+        : { x: boundingBox(existingNodes).maxX + NEW_ROOM_GAP, y: 0 };
+
+    const graph = createRoomFromInnerSize(floor.graph, {
+      width: spec.width,
+      depth: spec.depth,
+      thickness: spec.thickness,
+      kind: 'exterior',
+      origin,
+    }).graph;
+
+    // Reconcile up front so the room that just appeared can be named as part of
+    // the same edit; the store's own pass afterwards then finds nothing to do.
+    const before = new Set(floor.rooms.map((room) => room.id));
+    const reconciled = reconcileFloor({ ...floor, graph });
+    const fresh = reconciled.rooms.find((room) => !before.has(room.id));
+
+    const rooms = reconciled.rooms.map((room) =>
+      room.id === fresh?.id ? { ...room, name: spec.name, type: spec.type } : room,
+    );
+
+    get().commit('Add room', (draft) => {
+      const target = draft.floors.find((entry) => entry.id === floorId);
+      if (!target) return;
+
+      target.graph = graph;
+      target.rooms = rooms;
+      target.ceilingHeight = spec.ceilingHeight;
+    });
+
+    if (fresh) get().select([{ kind: 'room', id: fresh.id }]);
   },
 
   setActiveFloor: (floorId) => {

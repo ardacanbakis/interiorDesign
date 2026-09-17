@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { floorArea, roomsOf } from '../core/model/derive.ts';
 import { formatArea } from '../core/units/length.ts';
@@ -6,6 +6,7 @@ import { type SaveState } from '../persistence/autosave.ts';
 import { activeFloor, useEditorStore } from '../state/store.ts';
 import { PlanCanvas } from '../views/plan2d/PlanCanvas.tsx';
 import { Inspector } from './Inspector.tsx';
+import { NewRoomPanel } from './NewRoomPanel.tsx';
 import { Toolbar } from './Toolbar.tsx';
 import { useKeyboardShortcuts } from './useKeyboardShortcuts.ts';
 
@@ -67,6 +68,7 @@ function RoomList() {
   const floor = useEditorStore(activeFloor);
   const select = useEditorStore((state) => state.select);
   const selection = useEditorStore((state) => state.selection);
+  const [adding, setAdding] = useState(false);
 
   if (!floor) return <Note>No floor selected.</Note>;
 
@@ -76,11 +78,26 @@ function RoomList() {
   // the one printed inside it on the canvas.
   const rooms = roomsOf(floor);
 
-  if (rooms.length === 0) {
+  // An empty plan opens straight onto the form rather than an instruction to go
+  // and draw something. Typing the measurements is the point.
+  if (rooms.length === 0 || adding) {
     return (
-      <Note>
-        No rooms yet. Draw a closed shape with the Room or Wall tool and a room appears by itself.
-      </Note>
+      <div className="flex flex-col gap-3">
+        <NewRoomPanel onDone={() => setAdding(false)} />
+        {adding && (
+          <button
+            type="button"
+            onClick={() => setAdding(false)}
+            className="text-[11px] underline"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Cancel
+          </button>
+        )}
+        {rooms.length === 0 && (
+          <Note>Or draw one with the Room or Wall tool — a room appears by itself.</Note>
+        )}
+      </div>
     );
   }
 
@@ -89,33 +106,45 @@ function RoomList() {
   );
 
   return (
-    <ul className="flex flex-col gap-0.5">
-      {rooms.map(({ props, geometry }) => {
-        const selected = selectedIds.has(props.id);
-        return (
-          <li key={props.id}>
-            <button
-              type="button"
-              data-testid={`room-list-${props.id}`}
-              onClick={() => select([{ kind: 'room', id: props.id }])}
-              className="flex w-full items-baseline justify-between gap-2 rounded px-2 py-1 text-left text-xs"
-              style={{
-                background: selected ? 'var(--color-accent-500)' : 'transparent',
-                color: selected ? '#fff' : 'var(--text-primary)',
-              }}
-            >
-              <span className="truncate">{props.name}</span>
-              <span
-                className="tabular shrink-0 text-[10px]"
-                style={{ color: selected ? 'rgba(255,255,255,0.8)' : 'var(--text-muted)' }}
+    <div className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-0.5">
+        {rooms.map(({ props, geometry }) => {
+          const selected = selectedIds.has(props.id);
+          return (
+            <li key={props.id}>
+              <button
+                type="button"
+                data-testid={`room-list-${props.id}`}
+                onClick={() => select([{ kind: 'room', id: props.id }])}
+                className="flex w-full items-baseline justify-between gap-2 rounded px-2 py-1 text-left text-xs"
+                style={{
+                  background: selected ? 'var(--color-accent-500)' : 'transparent',
+                  color: selected ? '#fff' : 'var(--text-primary)',
+                }}
               >
-                {formatArea(geometry.area)} m²
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+                <span className="truncate">{props.name}</span>
+                <span
+                  className="tabular shrink-0 text-[10px]"
+                  style={{ color: selected ? 'rgba(255,255,255,0.8)' : 'var(--text-muted)' }}
+                >
+                  {formatArea(geometry.area)} m²
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+
+      <button
+        type="button"
+        data-testid="add-room"
+        onClick={() => setAdding(true)}
+        className="w-full rounded border border-dashed py-1.5 text-[11px]"
+        style={{ borderColor: 'var(--surface-border-strong)', color: 'var(--text-secondary)' }}
+      >
+        Add room
+      </button>
+    </div>
   );
 }
 

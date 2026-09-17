@@ -163,16 +163,23 @@ export function PlanCanvas() {
     };
   }, []);
 
-  // ---- Fit to the plan on first sight --------------------------------------
+  // ---- Frame the plan when it first has something in it -------------------
 
-  const fittedOnce = useRef(false);
+  // Fits when the floor goes from empty to not — on load, and again the moment
+  // a room is created from typed measurements, which would otherwise appear
+  // somewhere off screen at whatever zoom happened to be current.
+  const hadContent = useRef(false);
   useEffect(() => {
-    if (fittedOnce.current || !graph || size.width === 0) return;
+    if (!graph || size.width === 0) return;
 
     const points = allNodes(graph).map((node) => ({ x: node.x, y: node.y }));
-    if (points.length === 0) return;
+    if (points.length === 0) {
+      hadContent.current = false;
+      return;
+    }
 
-    fittedOnce.current = true;
+    if (hadContent.current) return;
+    hadContent.current = true;
     setViewport(fitTo(boundingBox(points), size, { padding: 64 }));
   }, [graph, size, setViewport]);
 

@@ -42,10 +42,12 @@ describe('AppShell', () => {
     expect(screen.getByRole('toolbar', { name: 'Drawing tools' })).toBeInTheDocument();
   });
 
-  it('says what to do when the plan is empty', () => {
+  it('opens straight onto the new-room form when the plan is empty', () => {
+    // Typing the measurements is the point, so an empty plan should not greet
+    // you with an instruction to go and draw something.
     render(<AppShell />);
 
-    expect(screen.getByText(/No rooms yet/)).toBeInTheDocument();
+    expect(screen.getByTestId('new-room-panel')).toBeInTheDocument();
     expect(screen.getByTestId('room-count')).toHaveTextContent('0 rooms');
   });
 
@@ -128,9 +130,105 @@ describe('AppShell — tools', () => {
   });
 });
 
+describe('AppShell — creating a room from measurements', () => {
+  it('builds a room whose floor is exactly the size typed', async () => {
+    const user = userEvent.setup();
+    render(<AppShell />);
+
+    await user.clear(screen.getByLabelText('Width'));
+    await user.type(screen.getByLabelText('Width'), '360');
+    await user.clear(screen.getByLabelText('Depth'));
+    await user.type(screen.getByLabelText('Depth'), '420');
+    await user.clear(screen.getByLabelText('Wall'));
+    await user.type(screen.getByLabelText('Wall'), '10');
+
+    // 3.6m x 4.2m = 15.12 m², and the form says so before committing.
+    expect(screen.getByTestId('new-room-preview')).toHaveTextContent('15.12 m²');
+
+    await user.type(screen.getByTestId('new-room-name'), 'Yatak Odası');
+    await user.click(screen.getByTestId('create-room'));
+
+    expect(screen.getByTestId('room-count')).toHaveTextContent('1 room');
+    // The promise the form makes: the floor measures what was typed, not that
+    // minus a wall.
+    expect(screen.getByTestId('floor-area')).toHaveTextContent('15.12 m²');
+    expect(screen.getByText('Yatak Odası')).toBeInTheDocument();
+  });
+
+  it('falls back to the room type for a name left blank', async () => {
+    const user = userEvent.setup();
+    render(<AppShell />);
+
+    await user.selectOptions(screen.getByTestId('new-room-type'), 'kitchen');
+    await user.click(screen.getByTestId('create-room'));
+
+    expect(screen.getByText('Kitchen')).toBeInTheDocument();
+    expect(useEditorStore.getState().document.floors[0]!.rooms[0]!.type).toBe('kitchen');
+  });
+
+  it('sets the floor’s ceiling height', async () => {
+    const user = userEvent.setup();
+    render(<AppShell />);
+
+    await user.clear(screen.getByLabelText('Ceiling'));
+    await user.type(screen.getByLabelText('Ceiling'), '290');
+    await user.click(screen.getByTestId('create-room'));
+
+    expect(useEditorStore.getState().document.floors[0]!.ceilingHeight).toBe(2900);
+  });
+
+  it('is a single undo step, name included', async () => {
+    const user = userEvent.setup();
+    render(<AppShell />);
+
+    await user.type(screen.getByTestId('new-room-name'), 'Salon');
+    await user.click(screen.getByTestId('create-room'));
+    expect(screen.getByTestId('room-count')).toHaveTextContent('1 room');
+
+    // Adding a room and naming it is one action to whoever did it.
+    await user.click(screen.getByTestId('undo'));
+    expect(screen.getByTestId('room-count')).toHaveTextContent('0 rooms');
+    expect(useEditorStore.getState().canUndo()).toBe(false);
+  });
+
+  it('selects the new room so the inspector is already on it', async () => {
+    const user = userEvent.setup();
+    render(<AppShell />);
+
+    await user.type(screen.getByTestId('new-room-name'), 'Salon');
+    await user.click(screen.getByTestId('create-room'));
+
+    const selection = useEditorStore.getState().selection;
+    expect(selection).toHaveLength(1);
+    expect(selection[0]!.kind).toBe('room');
+    expect(screen.getByTestId('room-name')).toHaveValue('Salon');
+  });
+
+  it('adds a second room clear of the first rather than on top of it', async () => {
+    const user = userEvent.setup();
+    render(<AppShell />);
+
+    await user.type(screen.getByTestId('new-room-name'), 'Salon');
+    await user.click(screen.getByTestId('create-room'));
+
+    await user.click(screen.getByTestId('add-room'));
+    await user.type(screen.getByTestId('new-room-name'), 'Mutfak');
+    await user.click(screen.getByTestId('create-room'));
+
+    expect(screen.getByTestId('room-count')).toHaveTextContent('2 rooms');
+    // Two separate rooms, each still measuring what was asked for — the same
+    // document simply grew, which is what makes the house case free.
+    expect(screen.getByText('Salon')).toBeInTheDocument();
+    expect(screen.getByText('Mutfak')).toBeInTheDocument();
+  });
+});
+
 describe('AppShell — inspector', () => {
   it('prompts when nothing is selected', () => {
+    drawShell();
+    useEditorStore.getState().select([]);
     render(<AppShell />);
+
     expect(screen.getByText(/Nothing selected/)).toBeInTheDocument();
   });
 
