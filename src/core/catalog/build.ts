@@ -223,8 +223,10 @@ export interface SideZoneOptions extends Omit<FrontZoneOptions, 'depth'> {
   /** How far out from the side face the space is needed. */
   readonly reach: Mm;
   readonly side: 'left' | 'right';
-  /** Defaults to the item's full depth. */
+  /** How much of the item's length the zone runs along. Defaults to all of it. */
   readonly along?: Mm;
+  /** Where along the item that run is centred. Defaults to the middle. */
+  readonly offset?: Mm;
 }
 
 /** The space beside an item — getting out of a bed, standing beside a WC. */
@@ -236,7 +238,12 @@ export function sideZone(itemWidth: Mm, itemDepth: Mm, options: SideZoneOptions)
   return {
     id: options.id,
     reason: options.reason,
-    polygon: rectAt(direction * (edge + options.reach / 2), 0, options.reach, along),
+    polygon: rectAt(
+      direction * (edge + options.reach / 2),
+      options.offset ?? 0,
+      options.reach,
+      along,
+    ),
     severity: options.severity ?? 'warning',
     minimumBlockingHeight: options.minimumBlockingHeight ?? 100,
   };

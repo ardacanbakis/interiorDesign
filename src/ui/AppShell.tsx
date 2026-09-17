@@ -1,12 +1,14 @@
 import { useState, type ReactNode } from 'react';
 
 import { floorArea, roomsOf } from '../core/model/derive.ts';
+import { countBySeverity, issuesOf } from '../core/rules/engine.ts';
 import { formatArea } from '../core/units/length.ts';
 import { type SaveState } from '../persistence/autosave.ts';
 import { activeFloor, useEditorStore } from '../state/store.ts';
 import { PlanCanvas } from '../views/plan2d/PlanCanvas.tsx';
 import { CataloguePanel } from './CataloguePanel.tsx';
 import { Inspector } from './Inspector.tsx';
+import { IssuesPanel } from './IssuesPanel.tsx';
 import { NewRoomPanel } from './NewRoomPanel.tsx';
 import { Toolbar } from './Toolbar.tsx';
 import { useKeyboardShortcuts } from './useKeyboardShortcuts.ts';
@@ -46,9 +48,7 @@ export function AppShell({
           <PlanCanvas />
         </main>
 
-        <SidePanel side="right" title="Inspector">
-          <Inspector />
-        </SidePanel>
+        <RightPanel />
       </div>
 
       <StatusBar saveState={saveState} restoring={restoring} />
@@ -204,6 +204,88 @@ function LeftPanel() {
   );
 }
 
+/**
+ * The inspector and the checker, as two tabs.
+ *
+ * The check is the point of the whole project — "will it actually fit" — so it
+ * is one click from wherever you are, and the tab carries its own count. It
+ * comes forward by itself the first time something goes wrong, because a
+ * warning you have to go looking for is one you find out about after the
+ * wardrobe has been delivered; after that it stays where you put it.
+ */
+function RightPanel() {
+  const floor = useEditorStore(activeFloor);
+  const focused = useEditorStore((state) => state.focusedIssueId);
+  const issues = floor ? issuesOf(floor) : [];
+  const { errors, warnings } = countBySeverity(issues);
+
+  const [tab, setTab] = useState<'inspector' | 'issues'>('inspector');
+
+  // Clicking a row in the panel is the other way in; if something out there
+  // focused an issue, this is the tab that shows it.
+  const [lastFocused, setLastFocused] = useState(focused);
+  if (lastFocused !== focused) {
+    setLastFocused(focused);
+    if (focused) setTab('issues');
+  }
+
+  // One nudge, the first time a plan goes from clean to not.
+  const [announced, setAnnounced] = useState(errors > 0);
+  if (announced !== errors > 0) {
+    setAnnounced(errors > 0);
+    if (errors > 0) setTab('issues');
+  }
+
+  return (
+    <aside
+      className="hidden w-64 shrink-0 flex-col overflow-y-auto border-l md:flex"
+      style={{ background: 'var(--surface-panel)', borderColor: 'var(--surface-border)' }}
+      aria-label={tab === 'inspector' ? 'Inspector' : 'Issues'}
+    >
+      <div
+        role="tablist"
+        aria-label="Right panel"
+        className="sticky top-0 z-10 flex border-b"
+        style={{ background: 'var(--surface-panel)', borderColor: 'var(--surface-border)' }}
+      >
+        {(['inspector', 'issues'] as const).map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            data-testid={`tab-${id}`}
+            onClick={() => setTab(id)}
+            className="flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-semibold tracking-wider uppercase"
+            style={{
+              color: tab === id ? 'var(--text-primary)' : 'var(--text-muted)',
+              borderBottom:
+                tab === id ? '2px solid var(--color-accent-500)' : '2px solid transparent',
+            }}
+          >
+            {id}
+            {id === 'issues' && issues.length > 0 && (
+              <span
+                className="tabular rounded-full px-1.5 text-[10px] font-semibold"
+                data-testid="issues-count"
+                style={{
+                  background:
+                    errors > 0 ? 'var(--color-severity-error)' : 'var(--color-severity-warning)',
+                  color: '#fff',
+                }}
+              >
+                {errors + warnings}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-3">{tab === 'inspector' ? <Inspector /> : <IssuesPanel />}</div>
+    </aside>
+  );
+}
+
 function StorageWarning() {
   return (
     <div
@@ -217,38 +299,6 @@ function StorageWarning() {
       This browser will not let the app store anything, so your plan will be lost when you close the
       tab. Export it to a file to keep it.
     </div>
-  );
-}
-
-function SidePanel({
-  side,
-  title,
-  children,
-}: {
-  side: 'left' | 'right';
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <aside
-      className={`hidden w-64 shrink-0 flex-col overflow-y-auto md:flex ${
-        side === 'left' ? 'border-r' : 'border-l'
-      }`}
-      style={{ background: 'var(--surface-panel)', borderColor: 'var(--surface-border)' }}
-      aria-label={title}
-    >
-      <h2
-        className="sticky top-0 z-10 border-b px-3 py-2 text-[11px] font-semibold tracking-wider uppercase"
-        style={{
-          background: 'var(--surface-panel)',
-          borderColor: 'var(--surface-border)',
-          color: 'var(--text-muted)',
-        }}
-      >
-        {title}
-      </h2>
-      <div className="p-3">{children}</div>
-    </aside>
   );
 }
 

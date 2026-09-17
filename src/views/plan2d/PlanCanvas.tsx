@@ -16,12 +16,14 @@ import { drawRoomRect, drawWallRun, setWallLength } from '../../core/graph/opera
 import { getDefinition } from '../../core/catalog/registry.ts';
 import { type Item } from '../../core/model/schema.ts';
 import { roomsOf } from '../../core/model/derive.ts';
+import { issuesAbout, issuesOf } from '../../core/rules/engine.ts';
 import { applyGraphEdit } from '../../core/model/edits.ts';
 import { parseLength } from '../../core/units/length.ts';
 import { activeFloor, useEditorStore } from '../../state/store.ts';
 import { roomDimensions, wallDimensions, type Dimension } from './dimensions.ts';
 import { DimensionsLayer } from './layers/DimensionsLayer.tsx';
 import { GridLayer } from './layers/GridLayer.tsx';
+import { IssuesLayer } from './layers/IssuesLayer.tsx';
 import { ItemsLayer } from './layers/ItemsLayer.tsx';
 import { RoomLabelsLayer, RoomsLayer } from './layers/RoomsLayer.tsx';
 import { OpeningsLayer } from './layers/OpeningsLayer.tsx';
@@ -128,6 +130,31 @@ export function PlanCanvas() {
     () => new Set(selection.filter((entry) => entry.kind === 'opening').map((entry) => entry.id)),
     [selection],
   );
+  const focusedIssueId = useEditorStore((state) => state.focusedIssueId);
+
+  /**
+   * The issues worth drawing right now.
+   *
+   * The one clicked in the panel, plus anything about whatever is selected —
+   * so selecting a wardrobe shows you the space it is arguing over without
+   * having to go and find the row. Everything at once would be a heat map of
+   * nothing in particular.
+   */
+  const shownIssues = useMemo(() => {
+    if (!floor) return [];
+    const all = issuesOf(floor);
+
+    const focused = all.filter((issue) => issue.id === focusedIssueId);
+    const selected = selection.flatMap((target) => issuesAbout(all, target.kind, target.id));
+
+    const seen = new Set<string>();
+    return [...focused, ...selected].filter((issue) => {
+      if (seen.has(issue.id)) return false;
+      seen.add(issue.id);
+      return true;
+    });
+  }, [floor, focusedIssueId, selection]);
+
   const selectedItemIds = useMemo(
     () => new Set(selection.filter((entry) => entry.kind === 'item').map((entry) => entry.id)),
     [selection],
@@ -716,6 +743,8 @@ export function PlanCanvas() {
               <ItemsLayer items={[itemGhost]} viewport={viewport} selectedIds={GHOST_SELECTION} />
             </g>
           )}
+
+          <IssuesLayer issues={shownIssues} viewport={viewport} />
 
           <RoomLabelsLayer rooms={rooms} viewport={viewport} />
 

@@ -14,8 +14,9 @@ everyday objects whose every dimension is editable, and find out what will actua
   area and perimeter computed from the inner wall faces.
 - **Every object is parametric** — furniture is generated from its dimensions, so resizing a
   wardrobe is truthful in the plan, in 3D, and in its clearance requirements.
-- **Clearance checking** — live warnings when a door swing is blocked, a walkway is too narrow,
-  a wardrobe has no room to open, or a sofa covers a radiator.
+- **Clearance checking** — live warnings when a door swing is blocked, a wardrobe has no room
+  to open, a sofa covers a radiator, or a window is blocked by something taller than its sill.
+  Click a warning and the offending space lights up on the plan.
 
 ## Architecture in one paragraph
 
@@ -26,6 +27,14 @@ index, so splitting a room with a new wall keeps the name on the right half and 
 merges two rooms sensibly. All geometry, catalogue and rule logic lives in `src/core/` as pure
 functions with no React imports — enforced by an ESLint rule — which is what makes the test suite
 meaningful.
+
+The checker is the same idea again. A rule is a pure function from a floor to a
+list of issues, and most of the work is already done by the catalogue: every object
+declares the space it needs to function, so one rule covers about twenty checks and
+never has to change when furniture is added. Everything is height-aware, which is
+what separates a checker people leave switched on from one they turn off — a rug
+under a table, a shelf over a desk and a wall cupboard over a worktop all share floor
+plan, and none of them is a problem.
 
 Furniture follows the same principle: each kind is one `ItemDefinition` in `src/core/catalog/`
 that knows how to draw itself in plan, build itself as boxes for 3D, and say what space it needs
@@ -66,7 +75,7 @@ hit-testing and accessible text for free, and serialises straight to PNG and PDF
 - [x] **M3** — Start from a single room: create by typing its measurements
 - [ ] **M3b** — Multi-floor and stairs _(parked — single-room work comes first)_
 - [x] **M4** — Openings, and an object catalogue of 54 everyday things
-- [ ] **M5** — Clearance and ergonomics engine
+- [x] **M5** — Clearance and ergonomics engine
 - [ ] **M6** — 3D view
 - [ ] **M7** — First-person walkthrough
 - [ ] **M8** — Layout variants

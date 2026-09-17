@@ -175,6 +175,15 @@ export interface EditorStore {
   /** A copy, offset far enough to be visibly a second one, and selected. */
   duplicateItem: (itemId: ItemId) => void;
 
+  /**
+   * The issue the plan is currently pointing at, if any.
+   *
+   * Session state, not document state: which complaint you are looking at is a
+   * view of the plan, and nobody presses ctrl-Z expecting to un-read one.
+   */
+  focusedIssueId: string | null;
+  focusIssue: (issueId: string | null) => void;
+
   // ---- Session actions ----
   setActiveFloor: (floorId: FloorId) => void;
   select: (targets: readonly SelectionTarget[], mode?: SelectionMode) => void;
@@ -210,6 +219,7 @@ function initialState(): Pick<
   | 'tool'
   | 'openingPresetId'
   | 'placeItemKind'
+  | 'focusedIssueId'
 > {
   const document = createDocument();
   return {
@@ -222,6 +232,7 @@ function initialState(): Pick<
     tool: 'select',
     openingPresetId: 'door-80',
     placeItemKind: null,
+    focusedIssueId: null,
   };
 }
 
@@ -504,6 +515,8 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
 
     get().select([{ kind: 'item', id }]);
   },
+
+  focusIssue: (issueId) => set({ focusedIssueId: issueId }),
 
   setActiveFloor: (floorId) => {
     if (!findFloor(get().document, floorId)) return;

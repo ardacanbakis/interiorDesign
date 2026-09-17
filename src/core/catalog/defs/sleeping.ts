@@ -26,6 +26,15 @@ import { vec2 } from '../../geometry/vec2.ts';
 /** Minimum space to get in and out of a bed comfortably. */
 const BED_ACCESS: number = 600;
 
+/**
+ * How much of the head end the access zone leaves out.
+ *
+ * You get in and out of a bed beside its middle and its foot, not beside the
+ * pillows — which is exactly where a bedside table goes. Running the zone the
+ * whole length would flag every properly furnished bedroom in the country.
+ */
+const BED_HEAD_ALLOWANCE = 500;
+
 /** Top of the mattress above the floor — a divan base and a mattress on it. */
 const MATTRESS_TOP = 550;
 const HEADBOARD_DEPTH = 80;
@@ -41,24 +50,19 @@ function bedAccessZones(item: Item): ClearanceZone[] {
   const access = stringParam(item, 'access', 'both');
   const zones: ClearanceZone[] = [];
 
-  if (access === 'both' || access === 'left') {
-    zones.push(
-      sideZone(item.width, item.depth, {
-        id: 'bed-access-left',
-        reason: 'No room to get in or out of this side of the bed',
-        reach: BED_ACCESS,
-        side: 'left',
-      }),
-    );
-  }
+  const along = Math.max(300, item.depth - BED_HEAD_ALLOWANCE);
+  const offset = item.depth / 2 - along / 2;
 
-  if (access === 'both' || access === 'right') {
+  for (const side of ['left', 'right'] as const) {
+    if (access !== 'both' && access !== side) continue;
     zones.push(
       sideZone(item.width, item.depth, {
-        id: 'bed-access-right',
+        id: `bed-access-${side}`,
         reason: 'No room to get in or out of this side of the bed',
         reach: BED_ACCESS,
-        side: 'right',
+        side,
+        along,
+        offset,
       }),
     );
   }
