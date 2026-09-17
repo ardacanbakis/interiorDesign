@@ -149,6 +149,33 @@ export function segmentIntersection(
 }
 
 /**
+ * Intersect two infinite lines, each given as a point and a direction.
+ *
+ * Unlike {@link segmentIntersection} this ignores the segments' extents, which
+ * is what offsetting a polygon needs: when each edge is pushed inwards the new
+ * corner lies where the *lines* meet, typically beyond where either offset edge
+ * would have ended.
+ *
+ * Returns null when the lines are parallel and therefore never meet.
+ */
+export function lineIntersection(
+  pointA: Vec2,
+  directionA: Vec2,
+  pointB: Vec2,
+  directionB: Vec2,
+  tolerance = 1e-9,
+): Vec2 | null {
+  const denominator = cross(directionA, directionB);
+  const scaleA = Math.hypot(directionA.x, directionA.y);
+  const scaleB = Math.hypot(directionB.x, directionB.y);
+
+  if (Math.abs(denominator) <= tolerance * scaleA * scaleB) return null;
+
+  const t = cross(sub(pointB, pointA), directionB) / denominator;
+  return add(pointA, scale(directionA, t));
+}
+
+/**
  * The shared span of two collinear segments, ordered along the first.
  * Reports `none` when they only touch at a single point or not at all — a
  * single shared point between collinear segments is handled as a point

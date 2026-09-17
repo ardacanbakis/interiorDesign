@@ -144,7 +144,10 @@ export function extractFaces(graph: WallGraph): Face[] {
     } satisfies Face;
   });
 
-  return faces.sort((left, right) => right.area - left.area);
+  // Largest first, with the id as a tiebreak so that a plan split into two
+  // equal halves still produces a stable, repeatable order — room
+  // reconciliation depends on this being deterministic.
+  return faces.sort((left, right) => right.area - left.area || left.id.localeCompare(right.id));
 }
 
 function buildHalfEdges(graph: WallGraph): Map<string, HalfEdge> {
