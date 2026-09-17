@@ -49,6 +49,15 @@ export type SelectionTarget =
 
 export type SelectionMode = 'replace' | 'add' | 'toggle';
 
+/**
+ * What a click on the canvas does.
+ *
+ * Deliberately few. A drawing tool that is also a selection tool is how
+ * floor-plan editors end up with people accidentally dragging a wall across
+ * the house while trying to click on it.
+ */
+export type ToolId = 'select' | 'draw-room' | 'draw-wall';
+
 export interface Viewport {
   /** Model coordinates at the centre of the view. */
   readonly centre: { readonly x: number; readonly y: number };
@@ -73,6 +82,7 @@ export interface EditorStore {
   activeFloorId: FloorId;
   selection: readonly SelectionTarget[];
   viewport: Viewport;
+  tool: ToolId;
 
   // ---- Document actions ----
   commit: (label: string, recipe: (draft: HouseDocument) => void, options?: EditOptions) => void;
@@ -95,6 +105,7 @@ export interface EditorStore {
   clearSelection: () => void;
   isSelected: (target: SelectionTarget) => boolean;
   setViewport: (viewport: Viewport) => void;
+  setTool: (tool: ToolId) => void;
 }
 
 /**
@@ -114,7 +125,7 @@ function normalize(draft: HouseDocument): void {
 
 function initialState(): Pick<
   EditorStore,
-  'document' | 'history' | 'dirty' | 'activeFloorId' | 'selection' | 'viewport'
+  'document' | 'history' | 'dirty' | 'activeFloorId' | 'selection' | 'viewport' | 'tool'
 > {
   const document = createDocument();
   return {
@@ -124,6 +135,7 @@ function initialState(): Pick<
     activeFloorId: document.floors[0]!.id,
     selection: [],
     viewport: DEFAULT_VIEWPORT,
+    tool: 'select',
   };
 }
 
@@ -235,6 +247,11 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     get().selection.some((entry) => entry.kind === target.kind && entry.id === target.id),
 
   setViewport: (viewport) => set({ viewport }),
+
+  // Switching tools drops the selection: the inspector for a wall is not
+  // relevant while a room is being drawn, and a stale selection makes Delete
+  // do something surprising.
+  setTool: (tool) => set({ tool, selection: [] }),
 }));
 
 /**

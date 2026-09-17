@@ -1,0 +1,216 @@
+import { describe, expect, it } from 'vitest';
+
+import { normalize, perpendicular, sub, vec2 } from '../geometry/vec2.ts';
+import { extractFaces } from './faces.ts';
+import { drawRoomRect, drawWallRun, moveWallSideways, setWallLength } from './operations.ts';
+import {
+  allWalls,
+  EMPTY_GRAPH,
+  getWall,
+  graphFromSegments,
+  nodePoint,
+  rectangleSegments,
+  wallLength,
+  type WallGraph,
+} from './wallGraph.ts';
+
+const areas = (graph: WallGraph) =>
+  extractFaces(graph).map((face) => Number((face.area / 1_000_000).toFixed(4)));
+
+describe('drawRoomRect', () => {
+  it('draws a closed room from two corners', () => {
+    const { graph } = drawRoomRect(EMPTY_GRAPH, vec2(0, 0), vec2(4000, 3000));
+
+    expect(allWalls(graph)).toHaveLength(4);
+    expect(areas(graph)).toEqual([12]);
+  });
+
+  it('works from any pair of opposite corners', () => {
+    for (const [from, to] of [
+      [vec2(4000, 3000), vec2(0, 0)],
+      [vec2(0, 3000), vec2(4000, 0)],
+      [vec2(4000, 0), vec2(0, 3000)],
+    ] as const) {
+      expect(areas(drawRoomRect(EMPTY_GRAPH, from, to).graph)).toEqual([12]);
+    }
+  });
+
+  it('ignores a rectangle with no area', () => {
+    expect(drawRoomRect(EMPTY_GRAPH, vec2(0, 0), vec2(0, 3000)).graph).toBe(EMPTY_GRAPH);
+    expect(drawRoomRect(EMPTY_GRAPH, vec2(500, 500), vec2(500, 500)).graph).toBe(EMPTY_GRAPH);
+  });
+
+  it('shares walls with a room it is drawn against', () => {
+    // Two rooms side by side, drawn separately, meeting at x = 4000.
+    let graph = drawRoomRect(EMPTY_GRAPH, vec2(0, 0), vec2(4000, 3000)).graph;
+    graph = drawRoomRect(graph, vec2(4000, 0), vec2(7000, 3000)).graph;
+
+    expect(areas(graph)).toEqual([12, 9]);
+
+    // The wall between them exists once, not twice.
+    const shared = allWalls(graph).filter((wall) => {
+      const a = nodePoint(graph, wall.a);
+      const b = nodePoint(graph, wall.b);
+      return a.x === 4000 && b.x === 4000;
+    });
+    expect(shared).toHaveLength(1);
+  });
+
+  it('subdivides a room it is drawn inside', () => {
+    let graph = drawRoomRect(EMPTY_GRAPH, vec2(0, 0), vec2(6000, 4000)).graph;
+    graph = drawRoomRect(graph, vec2(0, 0), vec2(2000, 4000), 'interior').graph;
+
+    // A 2x4 carved out of a 6x4, leaving 4x4.
+    expect(areas(graph)).toEqual([16, 8]);
+  });
+
+  it('reports the walls it had to split', () => {
+    const shell = drawRoomRect(EMPTY_GRAPH, vec2(0, 0), vec2(6000, 4000)).graph;
+    const result = drawRoomRect(shell, vec2(2000, 0), vec2(4000, 4000), 'interior');
+
+    expect(result.splits.length).toBeGreaterThan(0);
+  });
+});
+
+describe('drawWallRun', () => {
+  it('draws a chain of walls', () => {
+    const { graph } = drawWallRun(EMPTY_GRAPH, [vec2(0, 0), vec2(3000, 0), vec2(3000, 2000)]);
+
+    expect(allWalls(graph)).toHaveLength(2);
+  });
+
+  it('closes a room when the run returns to its start', () => {
+    const { graph } = drawWallRun(EMPTY_GRAPH, [
+      vec2(0, 0),
+      vec2(4000, 0),
+      vec2(4000, 3000),
+      vec2(0, 3000),
+      vec2(0, 0),
+    ]);
+
+    expect(areas(graph)).toEqual([12]);
+  });
+
+  it('does nothing for a run of fewer than two points', () => {
+    expect(drawWallRun(EMPTY_GRAPH, [vec2(0, 0)]).graph).toBe(EMPTY_GRAPH);
+    expect(drawWallRun(EMPTY_GRAPH, []).graph).toBe(EMPTY_GRAPH);
+  });
+});
+
+describe('setWallLength', () => {
+  it('stretches a free-standing wall from its start', () => {
+    const graph = graphFromSegments([{ from: [0, 0], to: [1000, 0] }]);
+    const stretched = setWallLength(graph, 'w1', 2500);
+
+    expect(wallLength(stretched, getWall(stretched, 'w1'))).toBe(2500);
+    // The start stayed put.
+    expect(nodePoint(stretched, getWall(stretched, 'w1').a)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('shortens as readily as it stretches', () => {
+    const graph = graphFromSegments([{ from: [0, 0], to: [4000, 0] }]);
+    expect(wallLength(setWallLength(graph, 'w1', 1200), getWall(graph, 'w1'))).toBe(1200);
+  });
+
+  it('keeps the direction it was drawn in', () => {
+    const graph = graphFromSegments([{ from: [1000, 500], to: [1000, 3500] }]);
+    const stretched = setWallLength(graph, 'w1', 1000);
+    const wall = getWall(stretched, 'w1');
+
+    expect(nodePoint(stretched, wall.a)).toEqual({ x: 1000, y: 500 });
+    expect(nodePoint(stretched, wall.b)).toEqual({ x: 1000, y: 1500 });
+  });
+
+  it('moves the free end rather than tearing a corner open', () => {
+    // An L: (0,0)-(3000,0) then (3000,0)-(3000,2000). For the second wall,
+    // node `a` is the shared corner, so `b` is the one that should move.
+    const graph = graphFromSegments([
+      { from: [0, 0], to: [3000, 0] },
+      { from: [3000, 0], to: [3000, 2000] },
+    ]);
+
+    const target = allWalls(graph).find((wall) => {
+      const a = nodePoint(graph, wall.a);
+      const b = nodePoint(graph, wall.b);
+      return a.x === 3000 && b.x === 3000;
+    })!;
+
+    const stretched = setWallLength(graph, target.id, 5000);
+
+    // The corner is untouched, so the first wall is unaffected.
+    expect(allWalls(stretched).some((wall) => wallLength(stretched, wall) === 3000)).toBe(true);
+    expect(wallLength(stretched, getWall(stretched, target.id))).toBe(5000);
+  });
+
+  it('refuses a zero or negative length', () => {
+    const graph = graphFromSegments([{ from: [0, 0], to: [1000, 0] }]);
+    expect(setWallLength(graph, 'w1', 0)).toBe(graph);
+    expect(setWallLength(graph, 'w1', -500)).toBe(graph);
+  });
+
+  it('is a no-op when the length is already right', () => {
+    const graph = graphFromSegments([{ from: [0, 0], to: [1000, 0] }]);
+    expect(setWallLength(graph, 'w1', 1000)).toBe(graph);
+  });
+
+  it('resizes a room by its wall, keeping it closed', () => {
+    const graph = graphFromSegments(rectangleSegments(0, 0, 4000, 3000));
+    const top = allWalls(graph).find((wall) => {
+      const a = nodePoint(graph, wall.a);
+      const b = nodePoint(graph, wall.b);
+      return a.y === 0 && b.y === 0;
+    })!;
+
+    // Both ends are corners, so `b` moves and the room is dragged out of square
+    // — the room stays closed but is no longer a rectangle.
+    const widened = setWallLength(graph, top.id, 6000);
+    expect(wallLength(widened, getWall(widened, top.id))).toBe(6000);
+    expect(extractFaces(widened)).toHaveLength(1);
+  });
+});
+
+describe('moveWallSideways', () => {
+  it('slides a wall and stretches what is attached to it', () => {
+    // A 4m x 3m room; slide the left-hand wall 500mm further left.
+    const graph = graphFromSegments(rectangleSegments(0, 0, 4000, 3000));
+    expect(areas(graph)).toEqual([12]);
+
+    const left = allWalls(graph).find((wall) => {
+      const a = nodePoint(graph, wall.a);
+      const b = nodePoint(graph, wall.b);
+      return a.x === 0 && b.x === 0;
+    })!;
+
+    // Positive offset moves a wall to the right-hand side of the a-to-b
+    // direction. Which way that points depends on how this particular wall was
+    // wound, so derive it rather than guessing: take the right-hand normal and
+    // see whether it aims at the middle of the room.
+    const a = nodePoint(graph, left.a);
+    const b = nodePoint(graph, left.b);
+    const rightward = perpendicular(normalize(sub(b, a)));
+    const towardsCentre = rightward.x * (2000 - a.x) + rightward.y * (1500 - a.y) > 0;
+    const outward = towardsCentre ? -500 : 500;
+
+    const moved = moveWallSideways(graph, left.id, outward);
+
+    // The room got wider, and is still one closed room.
+    expect(areas(moved)).toEqual([(4500 * 3000) / 1_000_000]);
+    expect(extractFaces(moved)).toHaveLength(1);
+
+    // And the opposite sign narrows it, which is the other half of the claim.
+    expect(areas(moveWallSideways(graph, left.id, -outward))).toEqual([(3500 * 3000) / 1_000_000]);
+  });
+
+  it('is a no-op for a zero offset', () => {
+    const graph = graphFromSegments(rectangleSegments(0, 0, 4000, 3000));
+    expect(moveWallSideways(graph, allWalls(graph)[0]!.id, 0)).toBe(graph);
+  });
+
+  it('moves a lone wall without changing its length', () => {
+    const graph = graphFromSegments([{ from: [0, 0], to: [1000, 0] }]);
+    const moved = moveWallSideways(graph, 'w1', 300);
+
+    expect(wallLength(moved, getWall(moved, 'w1'))).toBe(1000);
+    expect(nodePoint(moved, getWall(moved, 'w1').a)).toEqual({ x: 0, y: 300 });
+  });
+});

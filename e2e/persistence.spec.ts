@@ -15,9 +15,8 @@ test('a plan survives a reload', async ({ page }) => {
   // Draw a 6m x 3m shell divided into two rooms, through the store.
   await page.evaluate(async () => {
     const { useEditorStore } = await import('/src/state/store.ts');
-    const { graphFromSegments, rectangleSegments, insertWall } = await import(
-      '/src/core/graph/wallGraph.ts'
-    );
+    const { graphFromSegments, rectangleSegments, insertWall } =
+      await import('/src/core/graph/wallGraph.ts');
 
     const store = useEditorStore.getState();
     store.commit('Draw shell', (draft) => {
@@ -62,9 +61,7 @@ test('floor area is reported from inside the walls', async ({ page }) => {
 
   await page.evaluate(async () => {
     const { useEditorStore } = await import('/src/state/store.ts');
-    const { graphFromSegments, rectangleSegments } = await import(
-      '/src/core/graph/wallGraph.ts'
-    );
+    const { graphFromSegments, rectangleSegments } = await import('/src/core/graph/wallGraph.ts');
 
     useEditorStore.getState().commit('Draw shell', (draft) => {
       draft.floors[0]!.graph = graphFromSegments(rectangleSegments(0, 0, 4000, 3000, 'exterior'));

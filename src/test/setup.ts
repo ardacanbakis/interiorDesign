@@ -12,4 +12,16 @@ if (typeof document !== 'undefined') {
   afterEach(() => {
     cleanup();
   });
+
+  // jsdom implements no layout, so it has no ResizeObserver. A stub that never
+  // fires is the honest stand-in: component tests then see the zero size the
+  // canvas starts at, which is a state it has to handle anyway. Anything that
+  // depends on a real measured size belongs in the Playwright suite.
+  if (!('ResizeObserver' in globalThis)) {
+    globalThis.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+  }
 }

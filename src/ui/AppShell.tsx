@@ -1,9 +1,13 @@
 import type { ReactNode } from 'react';
 
+import { floorArea, roomsOf } from '../core/model/derive.ts';
 import { formatArea } from '../core/units/length.ts';
-import { floorArea } from '../core/model/derive.ts';
 import { type SaveState } from '../persistence/autosave.ts';
 import { activeFloor, useEditorStore } from '../state/store.ts';
+import { PlanCanvas } from '../views/plan2d/PlanCanvas.tsx';
+import { Inspector } from './Inspector.tsx';
+import { Toolbar } from './Toolbar.tsx';
+import { useKeyboardShortcuts } from './useKeyboardShortcuts.ts';
 
 export interface AppShellProps {
   readonly saveState?: SaveState;
@@ -15,18 +19,18 @@ export interface AppShellProps {
 /**
  * The application frame.
  *
- * Layout is a fixed toolbar, a three-column body (catalogue / plan / inspector)
- * and a status bar. The plan column is the only one that grows; the side panels
- * are fixed-width and collapsible so the drawing area is never squeezed.
- *
- * At this milestone the panels are placeholders — M2 fills the plan column,
- * M4 fills the catalogue and inspector, M5 fills the issues list.
+ * A fixed toolbar, a three-column body, and a status bar. The plan column is
+ * the only one that grows; the side panels are fixed-width so the drawing area
+ * is never squeezed, and they fold away below tablet width where a phone is
+ * really only going to be reading the plan.
  */
 export function AppShell({
   saveState = 'idle',
   persistent = true,
   restoring = false,
 }: AppShellProps) {
+  useKeyboardShortcuts();
+
   return (
     <div className="flex h-full flex-col" style={{ background: 'var(--surface-app)' }}>
       <Toolbar />
@@ -34,25 +38,84 @@ export function AppShell({
       {!persistent && <StorageWarning />}
 
       <div className="flex min-h-0 flex-1">
-        <SidePanel side="left" title="Catalogue">
-          <PlaceholderNote>
-            Furniture, fixtures and openings will be listed here, grouped by category.
-          </PlaceholderNote>
+        <SidePanel side="left" title="Rooms">
+          <RoomList />
         </SidePanel>
 
         <main className="relative min-w-0 flex-1">
-          <PlanPlaceholder />
+          <PlanCanvas />
         </main>
 
         <SidePanel side="right" title="Inspector">
-          <PlaceholderNote>
-            Every measurement of the selected object will be editable here.
-          </PlaceholderNote>
+          <Inspector />
         </SidePanel>
       </div>
 
       <StatusBar saveState={saveState} restoring={restoring} />
     </div>
+  );
+}
+
+/**
+ * Every room on this floor.
+ *
+ * Doubles as the answer to "did that wall actually close the room?" — a shape
+ * that looks enclosed but is not simply does not appear here, which is a far
+ * quicker diagnosis than hunting for the gap on the canvas.
+ */
+function RoomList() {
+  const floor = useEditorStore(activeFloor);
+  const select = useEditorStore((state) => state.select);
+  const selection = useEditorStore((state) => state.selection);
+
+  if (!floor) return <Note>No floor selected.</Note>;
+
+  // Derived rather than read from `room.lastArea`: that field caches the
+  // *centreline* area and exists only to decide which name survives a merge.
+  // Showing it here would put a different number beside the room's name than
+  // the one printed inside it on the canvas.
+  const rooms = roomsOf(floor);
+
+  if (rooms.length === 0) {
+    return (
+      <Note>
+        No rooms yet. Draw a closed shape with the Room or Wall tool and a room appears by itself.
+      </Note>
+    );
+  }
+
+  const selectedIds = new Set(
+    selection.filter((entry) => entry.kind === 'room').map((entry) => entry.id),
+  );
+
+  return (
+    <ul className="flex flex-col gap-0.5">
+      {rooms.map(({ props, geometry }) => {
+        const selected = selectedIds.has(props.id);
+        return (
+          <li key={props.id}>
+            <button
+              type="button"
+              data-testid={`room-list-${props.id}`}
+              onClick={() => select([{ kind: 'room', id: props.id }])}
+              className="flex w-full items-baseline justify-between gap-2 rounded px-2 py-1 text-left text-xs"
+              style={{
+                background: selected ? 'var(--color-accent-500)' : 'transparent',
+                color: selected ? '#fff' : 'var(--text-primary)',
+              }}
+            >
+              <span className="truncate">{props.name}</span>
+              <span
+                className="tabular shrink-0 text-[10px]"
+                style={{ color: selected ? 'rgba(255,255,255,0.8)' : 'var(--text-muted)' }}
+              >
+                {formatArea(geometry.area)} m²
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -69,26 +132,6 @@ function StorageWarning() {
       This browser will not let the app store anything, so your plan will be lost when you close the
       tab. Export it to a file to keep it.
     </div>
-  );
-}
-
-function Toolbar() {
-  return (
-    <header
-      className="flex h-12 shrink-0 items-center gap-3 border-b px-3"
-      style={{ background: 'var(--surface-panel)', borderColor: 'var(--surface-border)' }}
-    >
-      <div className="flex items-center gap-2">
-        <Logo />
-        <span className="text-sm font-semibold tracking-tight">interiorDesign</span>
-      </div>
-
-      <div className="h-5 w-px" style={{ background: 'var(--surface-border-strong)' }} />
-
-      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-        Whole-house layout planner
-      </span>
-    </header>
   );
 }
 
@@ -110,7 +153,7 @@ function SidePanel({
       aria-label={title}
     >
       <h2
-        className="sticky top-0 border-b px-3 py-2 text-[11px] font-semibold tracking-wider uppercase"
+        className="sticky top-0 z-10 border-b px-3 py-2 text-[11px] font-semibold tracking-wider uppercase"
         style={{
           background: 'var(--surface-panel)',
           borderColor: 'var(--surface-border)',
@@ -124,29 +167,11 @@ function SidePanel({
   );
 }
 
-function PlaceholderNote({ children }: { children: ReactNode }) {
+function Note({ children }: { children: ReactNode }) {
   return (
     <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
       {children}
     </p>
-  );
-}
-
-function PlanPlaceholder() {
-  return (
-    <div
-      className="grid h-full place-items-center"
-      style={{ background: 'var(--plan-bg)' }}
-      data-testid="plan-canvas-placeholder"
-    >
-      <div className="max-w-sm px-6 text-center">
-        <p className="text-sm font-medium">Plan canvas</p>
-        <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-          Draw the building outline, then subdivide it into rooms. Walls between rooms are shared,
-          so a door in one is a door in both.
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -187,28 +212,5 @@ function StatusBar({ saveState, restoring }: { saveState: SaveState; restoring: 
         </>
       )}
     </footer>
-  );
-}
-
-function Logo() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
-      <rect
-        x="1.5"
-        y="1.5"
-        width="15"
-        height="15"
-        rx="1.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <path d="M1.5 10.5h7m0-9v15" stroke="currentColor" strokeWidth="1.5" />
-      <path
-        d="M11 6.5h3"
-        stroke="var(--color-accent-500)"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }

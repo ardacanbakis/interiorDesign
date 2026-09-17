@@ -55,7 +55,7 @@ hit-testing and accessible text for free, and serialises straight to PNG and PDF
 
 - [x] **M0** — Scaffold and toolchain
 - [x] **M1** — Domain core: units, geometry, wall graph, face extraction, store, persistence
-- [ ] **M2** — 2D plan editor
+- [x] **M2** — 2D plan editor
 - [ ] **M3** — Multi-floor and stairs
 - [ ] **M4** — Openings and the object catalogue
 - [ ] **M5** — Clearance and ergonomics engine
