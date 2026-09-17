@@ -46,6 +46,10 @@ jobs:
         run: cp dist/index.html dist/404.html
 
       - uses: actions/configure-pages@v5
+        with:
+          # Switch Pages on for the repository if it is not already, rather
+          # than failing and asking someone to go and find the setting.
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
