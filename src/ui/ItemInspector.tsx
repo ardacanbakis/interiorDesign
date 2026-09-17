@@ -45,6 +45,22 @@ export function ItemInspector({ floor, itemId }: { floor: Floor; itemId: string 
         </span>
       </div>
 
+      <Field label="Name" hint="Two of the same thing in one room are easier to tell apart named.">
+        <input
+          type="text"
+          value={item.label}
+          data-testid="item-label"
+          onChange={(event) => updateItem(itemId, { label: event.target.value })}
+          onKeyDown={(event) => event.stopPropagation()}
+          className="w-full rounded border px-2 py-1 text-xs"
+          style={{
+            background: 'var(--surface-raised)',
+            color: 'var(--text-primary)',
+            borderColor: 'var(--surface-border-strong)',
+          }}
+        />
+      </Field>
+
       {definition.presets.length > 0 && (
         <Field label="Size">
           <select

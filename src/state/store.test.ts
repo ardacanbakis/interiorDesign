@@ -460,3 +460,20 @@ describe('store — objects', () => {
     expect(store().selection).toEqual([]);
   });
 });
+
+describe('store — naming an object', () => {
+  it('keeps the name the user typed, not the catalogue label', () => {
+    // Two of the same thing in one room is ordinary, and two identical rows in
+    // the Issues panel is what it looks like before you can tell them apart.
+    store().addItem('bedside-table', 0, 0);
+    store().addItem('bedside-table', 2000, 0);
+    store().updateItem('i1', { label: 'Hers' });
+    store().updateItem('i2', { label: 'His' });
+
+    expect(store().document.floors[0]!.items.map((item) => item.label)).toEqual(['Hers', 'His']);
+    expect(store().document.floors[0]!.items.map((item) => item.kind)).toEqual([
+      'bedside-table',
+      'bedside-table',
+    ]);
+  });
+});
