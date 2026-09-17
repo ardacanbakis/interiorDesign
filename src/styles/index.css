@@ -1,0 +1,161 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Design tokens.
+
+   The app is a drafting tool, so the palette is deliberately quiet: a neutral
+   shell, a paper-coloured drawing surface, and colour reserved for meaning —
+   selection, snapping, and clearance violations. Anything that is coloured is
+   telling you something.
+   --------------------------------------------------------------------------- */
+
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+
+  /* Shell neutrals */
+  --color-shell-50: oklch(98.4% 0.003 106);
+  --color-shell-100: oklch(96.2% 0.004 106);
+  --color-shell-200: oklch(92.3% 0.005 106);
+  --color-shell-300: oklch(86.5% 0.006 106);
+  --color-shell-400: oklch(70.5% 0.008 106);
+  --color-shell-500: oklch(55.8% 0.009 106);
+  --color-shell-600: oklch(44.2% 0.009 106);
+  --color-shell-700: oklch(35.4% 0.009 106);
+  --color-shell-800: oklch(26.1% 0.008 106);
+  --color-shell-900: oklch(19.4% 0.007 106);
+  --color-shell-950: oklch(14.2% 0.006 106);
+
+  /* Accent — selection, active tool, focus ring */
+  --color-accent-400: oklch(72.5% 0.145 245);
+  --color-accent-500: oklch(64.2% 0.168 245);
+  --color-accent-600: oklch(55.8% 0.172 245);
+
+  /* Semantic — clearance severities */
+  --color-severity-error: oklch(59.5% 0.204 25);
+  --color-severity-warning: oklch(72.8% 0.155 72);
+  --color-severity-info: oklch(68.5% 0.105 210);
+
+  /* Snap guides */
+  --color-snap: oklch(68.5% 0.195 340);
+}
+
+/* ---------------------------------------------------------------------------
+   Theme surfaces. Declared as plain custom properties (not @theme) because they
+   flip between light and dark, and @theme values are static.
+   --------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light dark;
+
+  --surface-app: var(--color-shell-100);
+  --surface-panel: var(--color-shell-50);
+  --surface-raised: #fff;
+  --surface-border: var(--color-shell-200);
+  --surface-border-strong: var(--color-shell-300);
+
+  --text-primary: var(--color-shell-900);
+  --text-secondary: var(--color-shell-600);
+  --text-muted: var(--color-shell-500);
+
+  /* The drawing surface — paper */
+  --plan-bg: oklch(99.1% 0.002 106);
+  --plan-grid-minor: oklch(92.5% 0.004 106);
+  --plan-grid-major: oklch(86% 0.005 106);
+  --plan-wall-fill: var(--color-shell-800);
+  --plan-wall-stroke: var(--color-shell-900);
+  --plan-room-fill: oklch(97% 0.008 240);
+  --plan-ink: var(--color-shell-800);
+  --plan-dim: var(--color-shell-500);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-app: var(--color-shell-950);
+    --surface-panel: var(--color-shell-900);
+    --surface-raised: var(--color-shell-800);
+    --surface-border: var(--color-shell-800);
+    --surface-border-strong: var(--color-shell-700);
+
+    --text-primary: var(--color-shell-100);
+    --text-secondary: var(--color-shell-400);
+    --text-muted: var(--color-shell-500);
+
+    --plan-bg: oklch(17.5% 0.006 106);
+    --plan-grid-minor: oklch(22.5% 0.006 106);
+    --plan-grid-major: oklch(28% 0.007 106);
+    --plan-wall-fill: var(--color-shell-300);
+    --plan-wall-stroke: var(--color-shell-200);
+    --plan-room-fill: oklch(23% 0.012 240);
+    --plan-ink: var(--color-shell-200);
+    --plan-dim: var(--color-shell-400);
+  }
+}
+
+/* Explicit overrides so a theme toggle can force either mode later. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --surface-app: var(--color-shell-950);
+  --surface-panel: var(--color-shell-900);
+  --surface-raised: var(--color-shell-800);
+  --surface-border: var(--color-shell-800);
+  --surface-border-strong: var(--color-shell-700);
+  --text-primary: var(--color-shell-100);
+  --text-secondary: var(--color-shell-400);
+  --text-muted: var(--color-shell-500);
+  --plan-bg: oklch(17.5% 0.006 106);
+  --plan-grid-minor: oklch(22.5% 0.006 106);
+  --plan-grid-major: oklch(28% 0.007 106);
+  --plan-wall-fill: var(--color-shell-300);
+  --plan-wall-stroke: var(--color-shell-200);
+  --plan-room-fill: oklch(23% 0.012 240);
+  --plan-ink: var(--color-shell-200);
+  --plan-dim: var(--color-shell-400);
+}
+
+/* --------------------------------------------------------------------------- */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--surface-app);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  /* The plan canvas handles its own panning; stop the page rubber-banding. */
+  overscroll-behavior: none;
+}
+
+/* Numbers in a measurement tool should never reflow as they change. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+:where(button, [role='button'], a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-accent-500);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

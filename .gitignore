@@ -1,0 +1,41 @@
+node_modules
+dist
+dist-ssr
+coverage
+*.local
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Test output
+playwright-report
+test-results
+blob-report
+playwright/.cache
+
+# Env — cloud sync credentials (Phase B). Never commit these.
+.env
+.env.*
+!.env.example
+
+# TypeScript build-mode cache
+*.tsbuildinfo
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local house plans exported from the app — these describe where someone lives.
+*.house.json
