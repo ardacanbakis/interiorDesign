@@ -6,6 +6,7 @@ import { fitTo, zoomAt } from '../views/plan2d/viewport.ts';
 import { OPENING_PRESETS } from '../core/openings/defaults.ts';
 import { findDefinition } from '../core/catalog/registry.ts';
 import { activeFloor, useEditorStore, type ToolId } from '../state/store.ts';
+import { FileMenu } from './FileMenu.tsx';
 
 interface ToolDefinition {
   readonly id: ToolId;
@@ -109,6 +110,10 @@ export function Toolbar() {
           </ToolButton>
         ))}
       </div>
+
+      <Divider />
+
+      <FileMenu />
 
       <Divider />
 

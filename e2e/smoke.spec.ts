@@ -27,6 +27,8 @@ test('the app is usable without a mouse', async ({ page }) => {
 
   await expect(page.getByRole('button', { name: 'Undo' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Fit plan to view' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save to a file' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open a file' })).toBeVisible();
 
   // The catalogue is reached through the left panel's tabs rather than a tool
   // button, so those have to be named too.

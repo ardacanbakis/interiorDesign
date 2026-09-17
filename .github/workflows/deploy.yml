@@ -1,0 +1,63 @@
+name: Deploy
+
+# The live demo. Published from the working branch rather than from main,
+# because that is where the work is; point this at main once there is one.
+on:
+  push:
+    branches: ['claude/sleepy-ptolemy-a5igln']
+  workflow_dispatch:
+
+# Only the permissions Pages actually needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and never cancel one half-done.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        # A project site lives under /<repo>/, so the asset paths need it.
+        run: npm run build
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
+
+      - name: Copy index.html to 404.html
+        # Pages serves 404.html for any unknown path. Handing it the app means a
+        # deep link or a refresh lands in the app rather than on GitHub's own
+        # not-found page.
+        run: cp dist/index.html dist/404.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
