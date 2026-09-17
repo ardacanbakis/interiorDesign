@@ -45,11 +45,12 @@ jobs:
         # not-found page.
         run: cp dist/index.html dist/404.html
 
+      # Pages has to be switched on for the repository once, by hand, under
+      # Settings → Pages → Source → GitHub Actions. A workflow token is not
+      # allowed to do it — `enablement: true` here fails with "Resource not
+      # accessible by integration" — so this step reports it rather than
+      # pretending it can fix it.
       - uses: actions/configure-pages@v5
-        with:
-          # Switch Pages on for the repository if it is not already, rather
-          # than failing and asking someone to go and find the setting.
-          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
