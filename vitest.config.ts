@@ -11,7 +11,10 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'jsdom',
+    // Node by default: the domain core has no DOM dependency, and making that
+    // the default keeps it honest as well as faster. Component tests opt in
+    // with a `@vitest-environment jsdom` docblock.
+    environment: 'node',
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     coverage: {

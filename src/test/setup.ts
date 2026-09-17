@@ -1,7 +1,15 @@
-import '@testing-library/jest-dom/vitest';
-import { cleanup } from '@testing-library/react';
+/**
+ * Global test setup.
+ *
+ * Guarded because most suites run in the `node` environment — the domain core
+ * has no DOM — and Testing Library's cleanup would throw there.
+ */
 import { afterEach } from 'vitest';
 
-afterEach(() => {
-  cleanup();
-});
+if (typeof document !== 'undefined') {
+  await import('@testing-library/jest-dom/vitest');
+  const { cleanup } = await import('@testing-library/react');
+  afterEach(() => {
+    cleanup();
+  });
+}
