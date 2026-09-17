@@ -38,27 +38,12 @@ export type RoomId = string;
 /**
  * What a room is for. Drives the default name, which fixtures the catalogue
  * offers first, and which clearance rules apply.
+ *
+ * Declared as a const tuple with the union derived from it, rather than the
+ * other way round, so that the list can be handed straight to `z.enum` and to
+ * a dropdown without either being able to fall behind the type.
  */
-export type RoomType =
-  | 'bedroom'
-  | 'living'
-  | 'kitchen'
-  | 'dining'
-  | 'bathroom'
-  | 'wc'
-  | 'hall'
-  | 'corridor'
-  | 'office'
-  | 'utility'
-  | 'storage'
-  | 'garage'
-  | 'stairwell'
-  | 'balcony'
-  | 'terrace'
-  | 'garden'
-  | 'other';
-
-export const ROOM_TYPES: readonly RoomType[] = [
+export const ROOM_TYPES = [
   'bedroom',
   'living',
   'kitchen',
@@ -76,7 +61,9 @@ export const ROOM_TYPES: readonly RoomType[] = [
   'terrace',
   'garden',
   'other',
-];
+] as const;
+
+export type RoomType = (typeof ROOM_TYPES)[number];
 
 /** Room data that persists, independent of the faces it is matched to. */
 export interface RoomProps {

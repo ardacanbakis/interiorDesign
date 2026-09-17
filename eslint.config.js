@@ -67,6 +67,11 @@ export default tseslint.config(
     files: ['**/*.{test,spec}.{ts,tsx}', 'src/test/**/*.ts'],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',
+      // Tests that walk a sequence of states use
+      // `({ state, history } = step(state, history))` repeatedly. The final
+      // assignment in each sequence is flagged as unused even though writing it
+      // any other way would make the sequence harder to follow.
+      'no-useless-assignment': 'off',
     },
   },
   {

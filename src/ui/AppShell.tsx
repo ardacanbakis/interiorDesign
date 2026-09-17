@@ -1,5 +1,17 @@
 import type { ReactNode } from 'react';
 
+import { formatArea } from '../core/units/length.ts';
+import { floorArea } from '../core/model/derive.ts';
+import { type SaveState } from '../persistence/autosave.ts';
+import { activeFloor, useEditorStore } from '../state/store.ts';
+
+export interface AppShellProps {
+  readonly saveState?: SaveState;
+  /** False when storage is unavailable, so nothing will be kept. */
+  readonly persistent?: boolean;
+  readonly restoring?: boolean;
+}
+
 /**
  * The application frame.
  *
@@ -10,10 +22,16 @@ import type { ReactNode } from 'react';
  * At this milestone the panels are placeholders — M2 fills the plan column,
  * M4 fills the catalogue and inspector, M5 fills the issues list.
  */
-export function AppShell() {
+export function AppShell({
+  saveState = 'idle',
+  persistent = true,
+  restoring = false,
+}: AppShellProps) {
   return (
     <div className="flex h-full flex-col" style={{ background: 'var(--surface-app)' }}>
       <Toolbar />
+
+      {!persistent && <StorageWarning />}
 
       <div className="flex min-h-0 flex-1">
         <SidePanel side="left" title="Catalogue">
@@ -33,7 +51,23 @@ export function AppShell() {
         </SidePanel>
       </div>
 
-      <StatusBar />
+      <StatusBar saveState={saveState} restoring={restoring} />
+    </div>
+  );
+}
+
+function StorageWarning() {
+  return (
+    <div
+      role="status"
+      className="shrink-0 px-3 py-1.5 text-xs"
+      style={{
+        background: 'color-mix(in oklab, var(--color-severity-warning) 18%, transparent)',
+        color: 'var(--text-primary)',
+      }}
+    >
+      This browser will not let the app store anything, so your plan will be lost when you close the
+      tab. Export it to a file to keep it.
     </div>
   );
 }
@@ -116,7 +150,19 @@ function PlanPlaceholder() {
   );
 }
 
-function StatusBar() {
+const SAVE_LABELS: Record<SaveState, string> = {
+  idle: 'Ready',
+  pending: 'Unsaved changes',
+  saving: 'Saving…',
+  saved: 'Saved',
+  error: 'Could not save',
+};
+
+function StatusBar({ saveState, restoring }: { saveState: SaveState; restoring: boolean }) {
+  const floor = useEditorStore(activeFloor);
+  const roomCount = floor?.rooms.length ?? 0;
+  const area = floor ? floorArea(floor) : 0;
+
   return (
     <footer
       className="tabular flex h-7 shrink-0 items-center gap-4 border-t px-3 text-[11px]"
@@ -126,7 +172,20 @@ function StatusBar() {
         color: 'var(--text-muted)',
       }}
     >
-      <span>Ready</span>
+      <span
+        data-testid="save-state"
+        style={saveState === 'error' ? { color: 'var(--color-severity-error)' } : undefined}
+      >
+        {restoring ? 'Opening…' : SAVE_LABELS[saveState]}
+      </span>
+
+      {floor && (
+        <>
+          <span>{floor.name}</span>
+          <span data-testid="room-count">{roomCount === 1 ? '1 room' : `${roomCount} rooms`}</span>
+          {area > 0 && <span data-testid="floor-area">{formatArea(area)} m²</span>}
+        </>
+      )}
     </footer>
   );
 }

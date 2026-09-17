@@ -54,7 +54,7 @@ hit-testing and accessible text for free, and serialises straight to PNG and PDF
 ## Build plan
 
 - [x] **M0** — Scaffold and toolchain
-- [ ] **M1** — Domain core: units, geometry, wall graph, face extraction, store, persistence
+- [x] **M1** — Domain core: units, geometry, wall graph, face extraction, store, persistence
 - [ ] **M2** — 2D plan editor
 - [ ] **M3** — Multi-floor and stairs
 - [ ] **M4** — Openings and the object catalogue
