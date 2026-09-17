@@ -4,6 +4,7 @@ import { boundingBox } from '../core/geometry/polygon.ts';
 import { allNodes } from '../core/graph/wallGraph.ts';
 import { fitTo, zoomAt } from '../views/plan2d/viewport.ts';
 import { OPENING_PRESETS } from '../core/openings/defaults.ts';
+import { findDefinition } from '../core/catalog/registry.ts';
 import { activeFloor, useEditorStore, type ToolId } from '../state/store.ts';
 
 interface ToolDefinition {
@@ -149,6 +150,7 @@ export function Toolbar() {
       <Divider />
 
       {tool === 'place-opening' && <OpeningPresetPicker />}
+      {tool === 'place-item' && <ArmedObject />}
 
       <ZoomControls />
 
@@ -193,6 +195,51 @@ function OpeningPresetPicker() {
         </option>
       ))}
     </select>
+  );
+}
+
+/**
+ * What the placing tool is currently holding.
+ *
+ * There is no toolbar button for placing furniture: an object is chosen from
+ * the catalogue, which is already an unambiguous instruction, and a tool button
+ * that did nothing until you had also picked something would be a trap. This is
+ * the tool's only presence in the toolbar — a reminder of what is in hand, and
+ * the way to put it down.
+ */
+function ArmedObject() {
+  const kind = useEditorStore((state) => state.placeItemKind);
+  const setTool = useEditorStore((state) => state.setTool);
+  const definition = kind ? findDefinition(kind) : null;
+
+  if (!definition) return null;
+
+  return (
+    <div
+      className="flex h-8 items-center gap-2 rounded px-2 text-xs"
+      style={{ background: 'var(--color-accent-500)', color: '#fff' }}
+      data-testid="armed-object"
+    >
+      <span>Placing {definition.label.toLowerCase()}</span>
+      <button
+        type="button"
+        onClick={() => setTool('select')}
+        aria-label="Stop placing"
+        title="Stop placing (Escape)"
+        data-testid="disarm-object"
+        className="grid h-4 w-4 place-items-center rounded-full"
+        style={{ background: 'rgba(255,255,255,0.25)' }}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path
+            d="M2 2l6 6M8 2l-6 6"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+        </svg>
+      </button>
+    </div>
   );
 }
 

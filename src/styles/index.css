@@ -68,6 +68,10 @@
   --plan-room-fill: oklch(97% 0.008 240);
   --plan-ink: var(--color-shell-800);
   --plan-dim: var(--color-shell-500);
+  /* Furniture, warmer than the rooms so it reads as a separate layer. */
+  --plan-item-fill: oklch(95% 0.022 75);
+  --plan-item-fill-selected: oklch(93% 0.05 75);
+  --plan-item-ink: var(--color-shell-700);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -90,6 +94,9 @@
     --plan-room-fill: oklch(23% 0.012 240);
     --plan-ink: var(--color-shell-200);
     --plan-dim: var(--color-shell-400);
+    --plan-item-fill: oklch(27% 0.022 75);
+    --plan-item-fill-selected: oklch(32% 0.045 75);
+    --plan-item-ink: var(--color-shell-300);
   }
 }
 
@@ -116,6 +123,9 @@
   --plan-room-fill: oklch(23% 0.012 240);
   --plan-ink: var(--color-shell-200);
   --plan-dim: var(--color-shell-400);
+  --plan-item-fill: oklch(27% 0.022 75);
+  --plan-item-fill-selected: oklch(32% 0.045 75);
+  --plan-item-ink: var(--color-shell-300);
 }
 
 /* --------------------------------------------------------------------------- */

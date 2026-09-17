@@ -60,7 +60,28 @@ export const RoomsLayer = memo(function RoomsLayer({
           />
         );
       })}
+    </g>
+  );
+});
 
+/**
+ * Room names, drawn last.
+ *
+ * A separate layer from the floors because it has to sit *over* the furniture.
+ * A bed in the middle of a bedroom is the ordinary case, not the awkward one,
+ * and a room label half hidden under it reads as a rendering fault rather than
+ * as a plan. Architects solve this by moving the label; automatic placement
+ * cannot, so the label wins instead.
+ */
+export const RoomLabelsLayer = memo(function RoomLabelsLayer({
+  rooms,
+  viewport,
+}: {
+  rooms: readonly DerivedRoom[];
+  viewport: Viewport;
+}) {
+  return (
+    <g pointerEvents="none">
       {rooms.map((room) => (
         <RoomLabel key={`${room.props.id}-label`} room={room} viewport={viewport} />
       ))}
@@ -87,6 +108,7 @@ function RoomLabel({ room, viewport }: { room: DerivedRoom; viewport: Viewport }
         fontSize={nameSize}
         fontWeight={500}
         fill="var(--plan-ink)"
+        style={halo(nameSize)}
       >
         {room.props.name}
       </text>
@@ -96,10 +118,20 @@ function RoomLabel({ room, viewport }: { room: DerivedRoom; viewport: Viewport }
         textAnchor="middle"
         fontSize={areaSize}
         fill="var(--plan-dim)"
-        style={{ fontVariantNumeric: 'tabular-nums' }}
+        style={{ fontVariantNumeric: 'tabular-nums', ...halo(areaSize) }}
       >
         {formatArea(room.geometry.area)} m²
       </text>
     </g>
   );
+}
+
+/** Paint the stroke behind the glyphs, so text stays readable over anything. */
+function halo(size: number) {
+  return {
+    paintOrder: 'stroke' as const,
+    stroke: 'var(--plan-room-fill)',
+    strokeWidth: size / 4,
+    strokeLinejoin: 'round' as const,
+  };
 }

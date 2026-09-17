@@ -21,11 +21,13 @@ import { createDocument, findFloor } from '../core/model/document.ts';
 import {
   type FloorId,
   type HouseDocument,
+  type Item,
   type ItemId,
   type OpeningId,
 } from '../core/model/schema.ts';
 import { type RoomId, type RoomType } from '../core/graph/roomIdentity.ts';
 import { createRoomFromInnerSize } from '../core/graph/operations.ts';
+import { createItem, findDefinition } from '../core/catalog/registry.ts';
 import { allNodes } from '../core/graph/wallGraph.ts';
 import { boundingBox } from '../core/geometry/polygon.ts';
 import { type Mm } from '../core/units/length.ts';
@@ -64,7 +66,7 @@ export type SelectionMode = 'replace' | 'add' | 'toggle';
  * floor-plan editors end up with people accidentally dragging a wall across
  * the house while trying to click on it.
  */
-export type ToolId = 'select' | 'draw-room' | 'draw-wall' | 'place-opening';
+export type ToolId = 'select' | 'draw-room' | 'draw-wall' | 'place-opening' | 'place-item';
 
 export interface NewRoomSpec {
   /** Clear distance between wall faces. */
@@ -86,6 +88,14 @@ export interface NewRoomSpec {
  * "not attached yet".
  */
 const NEW_ROOM_GAP: Mm = 1000;
+
+/**
+ * How far a duplicate lands from its original.
+ *
+ * Far enough to be obviously a second object rather than a redraw of the first,
+ * near enough that it is still where you were looking.
+ */
+const DUPLICATE_OFFSET: Mm = 300;
 
 export interface Viewport {
   /** Model coordinates at the centre of the view. */
@@ -145,6 +155,26 @@ export interface EditorStore {
   updateOpening: (openingId: OpeningId, changes: Partial<Opening>) => void;
   removeOpening: (openingId: OpeningId) => void;
 
+  /**
+   * Which object the catalogue has armed for placing.
+   *
+   * Picking one is what switches to the placing tool, because choosing a
+   * wardrobe and then having to find the tool is a step nobody wants.
+   */
+  placeItemKind: string | null;
+  setPlaceItemKind: (kind: string | null) => void;
+  /** Drop an object on the plan at its defaults, and select it. */
+  addItem: (kind: string, x: Mm, y: Mm, rotation?: number) => void;
+  /**
+   * Change an item. `coalesceKey` folds a drag into one undo step, so pressing
+   * ctrl-Z once puts the wardrobe back where it started rather than walking it
+   * home a pixel at a time.
+   */
+  updateItem: (itemId: ItemId, changes: Partial<Item>, coalesceKey?: string) => void;
+  removeItem: (itemId: ItemId) => void;
+  /** A copy, offset far enough to be visibly a second one, and selected. */
+  duplicateItem: (itemId: ItemId) => void;
+
   // ---- Session actions ----
   setActiveFloor: (floorId: FloorId) => void;
   select: (targets: readonly SelectionTarget[], mode?: SelectionMode) => void;
@@ -179,6 +209,7 @@ function initialState(): Pick<
   | 'viewport'
   | 'tool'
   | 'openingPresetId'
+  | 'placeItemKind'
 > {
   const document = createDocument();
   return {
@@ -190,6 +221,7 @@ function initialState(): Pick<
     viewport: DEFAULT_VIEWPORT,
     tool: 'select',
     openingPresetId: 'door-80',
+    placeItemKind: null,
   };
 }
 
@@ -387,6 +419,92 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     get().select([]);
   },
 
+  setPlaceItemKind: (kind) => {
+    if (kind === null) {
+      set({ placeItemKind: null });
+      return;
+    }
+    // Choosing an object *is* choosing to place one; the tool follows.
+    set({ placeItemKind: kind, tool: 'place-item', selection: [] });
+  },
+
+  addItem: (kind, x, y, rotation = 0) => {
+    const floorId = get().activeFloorId;
+    const floor = get().document.floors.find((entry) => entry.id === floorId);
+    if (!floor || !findDefinition(kind)) return;
+
+    const id = nextItemId(floor.items);
+    const item = createItem(kind, id, x, y, rotation);
+
+    get().commit(`Add ${item.label.toLowerCase()}`, (draft) => {
+      draft.floors.find((entry) => entry.id === floorId)?.items.push(item);
+    });
+
+    get().select([{ kind: 'item', id }]);
+  },
+
+  updateItem: (itemId, changes, coalesceKey) => {
+    const floorId = get().activeFloorId;
+
+    get().commit(
+      'Change object',
+      (draft) => {
+        const target = draft.floors.find((entry) => entry.id === floorId);
+        const index = target?.items.findIndex((entry) => entry.id === itemId) ?? -1;
+        if (!target || index < 0) return;
+
+        const next = { ...target.items[index]!, ...changes };
+
+        // The model is whole millimetres and degrees within one turn. Letting a
+        // drag write 1200.0000001 would make every later comparison lie.
+        next.x = Math.round(next.x);
+        next.y = Math.round(next.y);
+        next.width = Math.max(1, Math.round(next.width));
+        next.depth = Math.max(1, Math.round(next.depth));
+        next.height = Math.max(1, Math.round(next.height));
+        next.elevation = Math.max(0, Math.round(next.elevation));
+        next.rotation = ((next.rotation % 360) + 360) % 360;
+
+        target.items[index] = next;
+      },
+      coalesceKey === undefined ? {} : { coalesceKey },
+    );
+  },
+
+  removeItem: (itemId) => {
+    const floorId = get().activeFloorId;
+
+    get().commit('Delete object', (draft) => {
+      const target = draft.floors.find((entry) => entry.id === floorId);
+      if (!target) return;
+      target.items = target.items.filter((entry) => entry.id !== itemId);
+    });
+
+    get().select([]);
+  },
+
+  duplicateItem: (itemId) => {
+    const floorId = get().activeFloorId;
+    const floor = get().document.floors.find((entry) => entry.id === floorId);
+    const original = floor?.items.find((entry) => entry.id === itemId);
+    if (!floor || !original) return;
+
+    const id = nextItemId(floor.items);
+    const copy = {
+      ...original,
+      id,
+      params: { ...original.params },
+      x: original.x + DUPLICATE_OFFSET,
+      y: original.y + DUPLICATE_OFFSET,
+    };
+
+    get().commit(`Duplicate ${original.label.toLowerCase()}`, (draft) => {
+      draft.floors.find((entry) => entry.id === floorId)?.items.push(copy);
+    });
+
+    get().select([{ kind: 'item', id }]);
+  },
+
   setActiveFloor: (floorId) => {
     if (!findFloor(get().document, floorId)) return;
     // Selection is per floor; carrying it across would leave the inspector
@@ -424,20 +542,42 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
 
   // Switching tools drops the selection: the inspector for a wall is not
   // relevant while a room is being drawn, and a stale selection makes Delete
-  // do something surprising.
-  setTool: (tool) => set({ tool, selection: [] }),
+  // do something surprising. Leaving the placing tool also disarms the
+  // catalogue — an object is placed by choosing it, so a tool still holding one
+  // after you have moved on is a loaded gun.
+  setTool: (tool) =>
+    set(
+      tool === 'place-item'
+        ? { tool, selection: [] }
+        : { tool, selection: [], placeItemKind: null },
+    ),
 }));
 
 /** Ids run o1, o2, … continuing from the highest already on the floor. */
 function nextOpeningId(openings: readonly Opening[]): string {
+  return nextId(openings, 'o');
+}
+
+/** Items run i1, i2, … on the same principle. */
+function nextItemId(items: readonly Item[]): string {
+  return nextId(items, 'i');
+}
+
+/**
+ * The next id in a prefixed sequence.
+ *
+ * Continuing from the highest rather than counting the entries: deleting the
+ * third of three and adding another must not hand out an id that an undo would
+ * bring a second holder back for.
+ */
+function nextId(existing: readonly { readonly id: string }[], prefix: string): string {
   let highest = 0;
-  for (const opening of openings) {
-    const suffix = Number(opening.id.slice(1));
-    if (opening.id.startsWith('o') && Number.isInteger(suffix) && suffix > highest) {
-      highest = suffix;
-    }
+  for (const entry of existing) {
+    if (!entry.id.startsWith(prefix)) continue;
+    const suffix = Number(entry.id.slice(prefix.length));
+    if (Number.isInteger(suffix) && suffix > highest) highest = suffix;
   }
-  return `o${highest + 1}`;
+  return `${prefix}${highest + 1}`;
 }
 
 /**

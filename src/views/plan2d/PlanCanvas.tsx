@@ -13,6 +13,8 @@ import { parameterAlong } from '../../core/geometry/segment.ts';
 import { clampOffset, fitsOnWall, openingFrame } from '../../core/openings/geometry.ts';
 import { defaultPresetFor, presetById } from '../../core/openings/defaults.ts';
 import { drawRoomRect, drawWallRun, setWallLength } from '../../core/graph/operations.ts';
+import { getDefinition } from '../../core/catalog/registry.ts';
+import { type Item } from '../../core/model/schema.ts';
 import { roomsOf } from '../../core/model/derive.ts';
 import { applyGraphEdit } from '../../core/model/edits.ts';
 import { parseLength } from '../../core/units/length.ts';
@@ -20,9 +22,11 @@ import { activeFloor, useEditorStore } from '../../state/store.ts';
 import { roomDimensions, wallDimensions, type Dimension } from './dimensions.ts';
 import { DimensionsLayer } from './layers/DimensionsLayer.tsx';
 import { GridLayer } from './layers/GridLayer.tsx';
-import { RoomsLayer } from './layers/RoomsLayer.tsx';
+import { ItemsLayer } from './layers/ItemsLayer.tsx';
+import { RoomLabelsLayer, RoomsLayer } from './layers/RoomsLayer.tsx';
 import { OpeningsLayer } from './layers/OpeningsLayer.tsx';
 import { WallsLayer } from './layers/WallsLayer.tsx';
+import { snapItem, type ItemSnap } from './itemSnapping.ts';
 import { snapPoint, squareToAxis, type Snap } from './snapping.ts';
 import { polygonPath } from './svgPath.ts';
 import { useElementSize } from './useElementSize.ts';
@@ -55,6 +59,14 @@ type Interaction =
       readonly nodeId: string;
       readonly pointerId: number;
       readonly moved: boolean;
+    }
+  | {
+      readonly kind: 'drag-item';
+      readonly itemId: string;
+      readonly pointerId: number;
+      /** Where inside the item it was grabbed, so it does not jump to centre. */
+      readonly grabOffset: Vec2;
+      readonly moved: boolean;
     };
 
 /** Where an opening would land if the pointer were clicked right now. */
@@ -79,18 +91,27 @@ export function PlanCanvas() {
   const viewport = useEditorStore((state) => state.viewport);
   const setViewport = useEditorStore((state) => state.setViewport);
   const tool = useEditorStore((state) => state.tool);
+  const setTool = useEditorStore((state) => state.setTool);
   const selection = useEditorStore((state) => state.selection);
   const select = useEditorStore((state) => state.select);
   const commit = useEditorStore((state) => state.commit);
   const unit = useEditorStore((state) => state.document.unit);
   const addOpening = useEditorStore((state) => state.addOpening);
   const openingPresetId = useEditorStore((state) => state.openingPresetId);
+  const placeItemKind = useEditorStore((state) => state.placeItemKind);
+  const addItem = useEditorStore((state) => state.addItem);
+  const updateItem = useEditorStore((state) => state.updateItem);
 
   const [interaction, setInteraction] = useState<Interaction>({ kind: 'idle' });
   const [snap, setSnap] = useState<Snap | null>(null);
   const [editing, setEditing] = useState<DimensionEdit | null>(null);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [openingHover, setOpeningHover] = useState<OpeningPreview | null>(null);
+  // Only the pose is state: which object is being placed comes from the store,
+  // so re-arming the catalogue swaps the ghost where it stands instead of
+  // leaving the previous one on screen until the pointer moves again.
+  const [ghostPose, setGhostPose] = useState<Pose | null>(null);
+  const [itemGuides, setItemGuides] = useState<readonly { from: Vec2; to: Vec2 }[]>([]);
 
   const graph = floor?.graph;
   const rooms = useMemo(() => (floor ? roomsOf(floor) : []), [floor]);
@@ -106,6 +127,46 @@ export function PlanCanvas() {
   const selectedOpeningIds = useMemo(
     () => new Set(selection.filter((entry) => entry.kind === 'opening').map((entry) => entry.id)),
     [selection],
+  );
+  const selectedItemIds = useMemo(
+    () => new Set(selection.filter((entry) => entry.kind === 'item').map((entry) => entry.id)),
+    [selection],
+  );
+
+  const ghostTemplate = useMemo(
+    () => (tool === 'place-item' ? templateItem(placeItemKind) : null),
+    [tool, placeItemKind],
+  );
+  const itemGhost = useMemo(
+    () => (ghostTemplate && ghostPose ? { ...ghostTemplate, ...ghostPose } : null),
+    [ghostTemplate, ghostPose],
+  );
+
+  /**
+   * Where an object would land for a pointer position.
+   *
+   * Returns the item itself rather than a position, because the answer includes
+   * a rotation: furniture snapped to a wall turns to face away from it, and the
+   * ghost has to show that before the click rather than after.
+   */
+  const placeAt = useCallback(
+    (raw: Vec2, template: Item, snapsOff: boolean): { item: Item; snap: ItemSnap } | null => {
+      if (!graph || !floor) return null;
+
+      const { minor } = gridSpacing(viewport);
+      const result = snapItem(graph, template, raw, {
+        reach: Math.max(screenPixels(viewport, 28), 150),
+        grid: minor,
+        neighbours: floor.items,
+        enabled: !snapsOff,
+      });
+
+      return {
+        item: { ...template, x: result.x, y: result.y, rotation: result.rotation },
+        snap: result,
+      };
+    },
+    [graph, floor, viewport],
   );
 
   /**
@@ -300,6 +361,12 @@ export function PlanCanvas() {
       return;
     }
 
+    if (tool === 'place-item') {
+      const placed = ghostTemplate ? placeAt(raw, ghostTemplate, event.altKey) : null;
+      if (placed) addItem(placed.item.kind, placed.item.x, placed.item.y, placed.item.rotation);
+      return;
+    }
+
     // Select tool, and the pointer reached the background: nothing was hit.
     select([]);
   };
@@ -357,8 +424,42 @@ export function PlanCanvas() {
       return;
     }
 
+    if (interaction.kind === 'drag-item') {
+      const item = floor?.items.find((entry) => entry.id === interaction.itemId);
+      if (!item) return;
+
+      // The grab point stays under the pointer while it is loose; once the item
+      // catches a wall the snap owns the position outright, because a wardrobe
+      // held 40mm off the wall by where you happened to grab it is not what
+      // anybody meant.
+      const target = {
+        x: raw.x - interaction.grabOffset.x,
+        y: raw.y - interaction.grabOffset.y,
+      };
+      const placed = placeAt(target, item, event.altKey);
+      if (!placed) return;
+
+      setItemGuides(placed.snap.guides);
+      updateItem(
+        item.id,
+        { x: placed.item.x, y: placed.item.y, rotation: placed.item.rotation },
+        `drag-item:${item.id}`,
+      );
+      setInteraction({ ...interaction, moved: true });
+      return;
+    }
+
     if (tool === 'place-opening') {
       setOpeningHover(previewOpeningAt(raw));
+      return;
+    }
+
+    if (tool === 'place-item') {
+      const placed = ghostTemplate ? placeAt(raw, ghostTemplate, event.altKey) : null;
+      setGhostPose(
+        placed ? { x: placed.item.x, y: placed.item.y, rotation: placed.item.rotation } : null,
+      );
+      setItemGuides(placed?.snap.guides ?? []);
       return;
     }
 
@@ -370,6 +471,15 @@ export function PlanCanvas() {
   };
 
   const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (interaction.kind === 'drag-item') {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      setInteraction({ kind: 'idle' });
+      setItemGuides([]);
+      return;
+    }
+
     if (interaction.kind === 'pan' || interaction.kind === 'drag-node') {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
@@ -432,12 +542,13 @@ export function PlanCanvas() {
       if (isTypingInto(event.target)) return;
 
       if (event.key === 'Escape') {
-        if (interaction.kind === 'draw-wall') {
+        if (interaction.kind === 'draw-wall' || interaction.kind === 'draw-room') {
           setInteraction({ kind: 'idle' });
           setSnap(null);
-        } else if (interaction.kind === 'draw-room') {
-          setInteraction({ kind: 'idle' });
-          setSnap(null);
+        } else if (tool === 'place-item') {
+          // Puts the object down rather than clearing a selection there is none
+          // of — the placing tool holds something, and Escape is how you drop it.
+          setTool('select');
         } else {
           select([]);
         }
@@ -450,7 +561,7 @@ export function PlanCanvas() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [interaction, finishWallRun, select]);
+  }, [interaction, finishWallRun, select, tool, setTool]);
 
   // ---- Dimensions ----------------------------------------------------------
 
@@ -573,6 +684,48 @@ export function PlanCanvas() {
               : {})}
           />
 
+          <ItemsLayer
+            items={floor.items}
+            viewport={viewport}
+            selectedIds={selectedItemIds}
+            dimmed={tool !== 'select' && tool !== 'place-item'}
+            {...(tool === 'select'
+              ? {
+                  onSelect: (itemId: string, additive: boolean) =>
+                    select([{ kind: 'item', id: itemId }], additive ? 'add' : 'replace'),
+                  onGrab: (itemId: string, event: React.PointerEvent<SVGPathElement>) => {
+                    const item = floor.items.find((entry) => entry.id === itemId);
+                    if (!item) return;
+                    (event.currentTarget as SVGElement).releasePointerCapture?.(event.pointerId);
+                    const at = pointerToModel(event);
+                    setInteraction({
+                      kind: 'drag-item',
+                      itemId,
+                      pointerId: event.pointerId,
+                      grabOffset: { x: at.x - item.x, y: at.y - item.y },
+                      moved: false,
+                    });
+                    container.current?.setPointerCapture(event.pointerId);
+                  },
+                }
+              : {})}
+          />
+
+          {tool === 'place-item' && itemGhost && (
+            <g opacity={0.5} data-testid="placing-ghost">
+              <ItemsLayer items={[itemGhost]} viewport={viewport} selectedIds={GHOST_SELECTION} />
+            </g>
+          )}
+
+          <RoomLabelsLayer rooms={rooms} viewport={viewport} />
+
+          <ItemGuides
+            guides={
+              tool === 'place-item' || interaction.kind === 'drag-item' ? itemGuides : EMPTY_GUIDES
+            }
+            viewport={viewport}
+          />
+
           {tool === 'place-opening' && openingHover && (
             <OpeningPreviewMark graph={graph} preview={openingHover} />
           )}
@@ -626,6 +779,79 @@ export function PlanCanvas() {
 
 function lastPoint(points: readonly Vec2[]): Vec2 | null {
   return points[points.length - 1] ?? null;
+}
+
+/** The pointer decides only these three numbers about a ghost. */
+interface Pose {
+  readonly x: number;
+  readonly y: number;
+  readonly rotation: number;
+}
+
+const EMPTY_GUIDES: readonly { from: Vec2; to: Vec2 }[] = [];
+
+/** The ghost is drawn selected, so it reads as "this is what you are placing". */
+const GHOST_SELECTION: ReadonlySet<string> = new Set(['ghost']);
+
+/**
+ * An unplaced item of a given kind, for the ghost to be built from.
+ *
+ * Carries the catalogue defaults and nothing else: it is never committed, and
+ * the real item is created from the kind when the click lands.
+ */
+function templateItem(kind: string | null): Item | null {
+  if (!kind) return null;
+  try {
+    const definition = getDefinition(kind);
+    return {
+      id: 'ghost',
+      kind,
+      label: definition.label,
+      x: 0,
+      y: 0,
+      rotation: 0,
+      width: definition.defaults.width,
+      depth: definition.defaults.depth,
+      height: definition.defaults.height,
+      elevation: definition.defaults.elevation,
+      mount: definition.defaults.mount,
+      params: { ...definition.params },
+    };
+  } catch {
+    // An armed kind the catalogue no longer has: nothing to draw, and the tool
+    // simply does nothing rather than taking the canvas down with it.
+    return null;
+  }
+}
+
+/** Why a piece of furniture jumped where it did. */
+function ItemGuides({
+  guides,
+  viewport,
+}: {
+  guides: readonly { from: Vec2; to: Vec2 }[];
+  viewport: Viewport;
+}) {
+  if (guides.length === 0) return null;
+  const width = screenPixels(viewport, 1);
+  const dash = screenPixels(viewport, 4);
+
+  return (
+    <g pointerEvents="none">
+      {guides.map((guide, index) => (
+        <line
+          key={index}
+          x1={guide.from.x}
+          y1={guide.from.y}
+          x2={guide.to.x}
+          y2={guide.to.y}
+          stroke="var(--color-snap)"
+          strokeWidth={width}
+          strokeDasharray={`${dash} ${dash}`}
+        />
+      ))}
+    </g>
+  );
 }
 
 /** True when a key event came from a text field, so shortcuts should stand down. */

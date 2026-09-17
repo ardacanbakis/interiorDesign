@@ -16,13 +16,21 @@ test('the app is usable without a mouse', async ({ page }) => {
   // Every control in the toolbar has to be reachable and named, because a
   // recruiter running an accessibility check is exactly the sort of visitor
   // this project expects.
-  const buttons = page.getByRole('toolbar', { name: 'Drawing tools' }).getByRole('button');
-  await expect(buttons).toHaveCount(3);
+  const tools = ['Select', 'Room', 'Wall', 'Door'];
 
-  for (const name of ['Select', 'Room', 'Wall']) {
+  const buttons = page.getByRole('toolbar', { name: 'Drawing tools' }).getByRole('button');
+  await expect(buttons).toHaveCount(tools.length);
+
+  for (const name of tools) {
     await expect(page.getByRole('button', { name, exact: false }).first()).toBeVisible();
   }
 
   await expect(page.getByRole('button', { name: 'Undo' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Fit plan to view' })).toBeVisible();
+
+  // The catalogue is reached through the left panel's tabs rather than a tool
+  // button, so those have to be named too.
+  const tabs = page.getByRole('tablist', { name: 'Left panel' }).getByRole('tab');
+  await expect(tabs).toHaveCount(2);
+  await expect(page.getByRole('tab', { name: 'objects' })).toBeVisible();
 });

@@ -63,11 +63,13 @@ export function useKeyboardShortcuts(): void {
         case 'backspace': {
           const openings = store.selection.filter((entry) => entry.kind === 'opening');
           const walls = store.selection.filter((entry) => entry.kind === 'wall');
-          if (openings.length === 0 && walls.length === 0) break;
+          const items = store.selection.filter((entry) => entry.kind === 'item');
+          if (openings.length === 0 && walls.length === 0 && items.length === 0) break;
 
           event.preventDefault();
 
           for (const opening of openings) store.removeOpening(opening.id);
+          for (const item of items) store.removeItem(item.id);
 
           if (walls.length > 0) {
             store.commit('Delete wall', (draft) => {

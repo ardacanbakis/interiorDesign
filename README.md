@@ -27,6 +27,13 @@ merges two rooms sensibly. All geometry, catalogue and rule logic lives in `src/
 functions with no React imports — enforced by an ESLint rule — which is what makes the test suite
 meaningful.
 
+Furniture follows the same principle: each kind is one `ItemDefinition` in `src/core/catalog/`
+that knows how to draw itself in plan, build itself as boxes for 3D, and say what space it needs
+to function — all as functions of its current dimensions. Adding a piece of furniture is an entry
+in one file; the renderer never learns it exists. One table-driven test holds every definition,
+at its defaults and at each of its standard sizes, to agreeing with its own stated width, depth
+and height, so no object can quietly lie about how big it is.
+
 ## Getting started
 
 ```bash
@@ -58,7 +65,7 @@ hit-testing and accessible text for free, and serialises straight to PNG and PDF
 - [x] **M2** — 2D plan editor
 - [x] **M3** — Start from a single room: create by typing its measurements
 - [ ] **M3b** — Multi-floor and stairs _(parked — single-room work comes first)_
-- [ ] **M4** — Openings and the object catalogue
+- [x] **M4** — Openings, and an object catalogue of 54 everyday things
 - [ ] **M5** — Clearance and ergonomics engine
 - [ ] **M6** — 3D view
 - [ ] **M7** — First-person walkthrough

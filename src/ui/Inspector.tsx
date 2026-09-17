@@ -15,6 +15,7 @@ import { roomsOf } from '../core/model/derive.ts';
 import { type Floor } from '../core/model/schema.ts';
 import { formatArea, formatLength } from '../core/units/length.ts';
 import { activeFloor, useEditorStore } from '../state/store.ts';
+import { ItemInspector } from './ItemInspector.tsx';
 import { LengthInput } from './LengthInput.tsx';
 
 /**
@@ -32,7 +33,10 @@ export function Inspector() {
 
   if (selection.length === 0) {
     return (
-      <Empty>Nothing selected. Click a wall or a room, or draw one with the tools above.</Empty>
+      <Empty>
+        Nothing selected. Click a wall, a room or an object — or pick something from the catalogue
+        to place.
+      </Empty>
     );
   }
 
@@ -52,6 +56,10 @@ export function Inspector() {
 
   if (target.kind === 'opening' && floor.openings.some((entry) => entry.id === target.id)) {
     return <OpeningInspector floor={floor} openingId={target.id} />;
+  }
+
+  if (target.kind === 'item') {
+    return <ItemInspector floor={floor} itemId={target.id} />;
   }
 
   return <Empty>Nothing to edit.</Empty>;

@@ -31,6 +31,10 @@ function divideAt(x: number) {
 
 beforeEach(() => {
   useEditorStore.getState().newDocument();
+  // The store is a module singleton and `newDocument` deliberately leaves the
+  // editor's own preferences alone — they are not document state. Tests do have
+  // to reset them, or one that arms the catalogue leaks into the next.
+  useEditorStore.setState({ tool: 'select', placeItemKind: null });
 });
 
 describe('store — starting state', () => {
@@ -345,5 +349,114 @@ describe('store — the graph stays planar through store edits', () => {
     });
 
     expect(store().document.floors[0]!.rooms).toHaveLength(1);
+  });
+});
+
+describe('store — objects', () => {
+  it('places an object at the catalogue defaults and selects it', () => {
+    drawShell();
+    store().addItem('wardrobe', 1200, 800);
+
+    const items = store().document.floors[0]!.items;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id: 'i1',
+      kind: 'wardrobe',
+      label: 'Wardrobe',
+      x: 1200,
+      y: 800,
+      width: 1500,
+      depth: 600,
+      height: 2100,
+      params: { doorType: 'hinged', doors: 3 },
+    });
+    expect(store().selection).toEqual([{ kind: 'item', id: 'i1' }]);
+    expect(store().undoLabel()).toBe('Add wardrobe');
+  });
+
+  it('refuses a kind the catalogue does not have', () => {
+    drawShell();
+    store().addItem('flying-carpet', 0, 0);
+
+    expect(store().document.floors[0]!.items).toHaveLength(0);
+  });
+
+  it('never hands out an id something on the floor is already using', () => {
+    // Ids continue from the highest, not from the count, so deleting from the
+    // middle does not renumber the survivors or collide with them.
+    store().addItem('stool', 0, 0);
+    store().addItem('stool', 500, 0);
+    store().addItem('stool', 1000, 0);
+    store().removeItem('i2');
+    store().addItem('stool', 1500, 0);
+
+    expect(store().document.floors[0]!.items.map((item) => item.id)).toEqual(['i1', 'i3', 'i4']);
+  });
+
+  it('rounds and normalises whatever it is given', () => {
+    store().addItem('stool', 0, 0);
+    store().updateItem('i1', { x: 120.7, y: -4.2, width: 381.6, rotation: 450 });
+
+    expect(store().document.floors[0]!.items[0]).toMatchObject({
+      x: 121,
+      y: -4,
+      width: 382,
+      rotation: 90,
+    });
+  });
+
+  it('folds a drag into one undo step', () => {
+    store().addItem('stool', 0, 0);
+
+    for (const x of [100, 200, 300]) {
+      store().updateItem('i1', { x }, 'drag-item:i1');
+    }
+    expect(store().document.floors[0]!.items[0]!.x).toBe(300);
+
+    // One press puts it back where the drag started, not two hundred presses.
+    store().undo();
+    expect(store().document.floors[0]!.items[0]!.x).toBe(0);
+  });
+
+  it('copies an object without sharing its parameters', () => {
+    store().addItem('wardrobe', 1000, 1000);
+    store().duplicateItem('i1');
+    store().updateItem('i2', { params: { doorType: 'sliding', doors: 2 } });
+
+    const [original, copy] = store().document.floors[0]!.items;
+    expect(copy).toMatchObject({ id: 'i2', kind: 'wardrobe' });
+    expect(copy!.x).toBeGreaterThan(original!.x);
+    expect(original!.params).toEqual({ doorType: 'hinged', doors: 3 });
+    expect(store().selection).toEqual([{ kind: 'item', id: 'i2' }]);
+  });
+
+  it('drops the selection when the object is deleted', () => {
+    store().addItem('stool', 0, 0);
+    store().removeItem('i1');
+
+    expect(store().document.floors[0]!.items).toHaveLength(0);
+    expect(store().selection).toEqual([]);
+  });
+
+  it('arms the placing tool by choosing an object', () => {
+    store().setPlaceItemKind('bed-double');
+
+    expect(store().tool).toBe('place-item');
+    expect(store().placeItemKind).toBe('bed-double');
+
+    // And leaving the tool puts the object down, so it cannot be dropped by a
+    // click meant for something else later.
+    store().setTool('select');
+    expect(store().placeItemKind).toBeNull();
+  });
+
+  it('forgets an object it no longer has when undone', () => {
+    store().addItem('stool', 0, 0);
+    store().select([{ kind: 'item', id: 'i1' }]);
+
+    store().undo();
+
+    expect(store().document.floors[0]!.items).toHaveLength(0);
+    expect(store().selection).toEqual([]);
   });
 });

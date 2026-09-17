@@ -5,6 +5,7 @@ import { formatArea } from '../core/units/length.ts';
 import { type SaveState } from '../persistence/autosave.ts';
 import { activeFloor, useEditorStore } from '../state/store.ts';
 import { PlanCanvas } from '../views/plan2d/PlanCanvas.tsx';
+import { CataloguePanel } from './CataloguePanel.tsx';
 import { Inspector } from './Inspector.tsx';
 import { NewRoomPanel } from './NewRoomPanel.tsx';
 import { Toolbar } from './Toolbar.tsx';
@@ -39,9 +40,7 @@ export function AppShell({
       {!persistent && <StorageWarning />}
 
       <div className="flex min-h-0 flex-1">
-        <SidePanel side="left" title="Rooms">
-          <RoomList />
-        </SidePanel>
+        <LeftPanel />
 
         <main className="relative min-w-0 flex-1">
           <PlanCanvas />
@@ -148,6 +147,63 @@ function RoomList() {
   );
 }
 
+/**
+ * Rooms and the catalogue, as two tabs.
+ *
+ * They are the same kind of thing — what to add to the plan — and both want the
+ * full height of the panel. Stacking them would give the catalogue about four
+ * visible rows, which for sixty objects is a scroll bar with a hint of a list
+ * attached.
+ */
+function LeftPanel() {
+  const [tab, setTab] = useState<'rooms' | 'objects'>('rooms');
+  const armed = useEditorStore((state) => state.placeItemKind);
+
+  // Arming an object from anywhere brings its tab forward, so the highlighted
+  // entry is never hidden behind the room list.
+  const [lastArmed, setLastArmed] = useState(armed);
+  if (lastArmed !== armed) {
+    setLastArmed(armed);
+    if (armed) setTab('objects');
+  }
+
+  return (
+    <aside
+      className="hidden w-64 shrink-0 flex-col overflow-y-auto border-r md:flex"
+      style={{ background: 'var(--surface-panel)', borderColor: 'var(--surface-border)' }}
+      aria-label={tab === 'rooms' ? 'Rooms' : 'Objects'}
+    >
+      <div
+        role="tablist"
+        aria-label="Left panel"
+        className="sticky top-0 z-10 flex border-b"
+        style={{ background: 'var(--surface-panel)', borderColor: 'var(--surface-border)' }}
+      >
+        {(['rooms', 'objects'] as const).map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            data-testid={`tab-${id}`}
+            onClick={() => setTab(id)}
+            className="flex-1 px-3 py-2 text-[11px] font-semibold tracking-wider uppercase"
+            style={{
+              color: tab === id ? 'var(--text-primary)' : 'var(--text-muted)',
+              borderBottom:
+                tab === id ? '2px solid var(--color-accent-500)' : '2px solid transparent',
+            }}
+          >
+            {id}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-3">{tab === 'rooms' ? <RoomList /> : <CataloguePanel />}</div>
+    </aside>
+  );
+}
+
 function StorageWarning() {
   return (
     <div
@@ -215,6 +271,7 @@ const SAVE_LABELS: Record<SaveState, string> = {
 function StatusBar({ saveState, restoring }: { saveState: SaveState; restoring: boolean }) {
   const floor = useEditorStore(activeFloor);
   const roomCount = floor?.rooms.length ?? 0;
+  const itemCount = floor?.items.length ?? 0;
   const area = floor ? floorArea(floor) : 0;
 
   return (
@@ -238,6 +295,11 @@ function StatusBar({ saveState, restoring }: { saveState: SaveState; restoring: 
           <span>{floor.name}</span>
           <span data-testid="room-count">{roomCount === 1 ? '1 room' : `${roomCount} rooms`}</span>
           {area > 0 && <span data-testid="floor-area">{formatArea(area)} m²</span>}
+          {itemCount > 0 && (
+            <span data-testid="item-count">
+              {itemCount === 1 ? '1 object' : `${itemCount} objects`}
+            </span>
+          )}
         </>
       )}
     </footer>
