@@ -81,7 +81,7 @@ hit-testing and accessible text for free, and serialises straight to PNG and PDF
 - [ ] **M8** — Layout variants
 - [ ] **M9** — Export and measuring checklists
 - [ ] **M10** — Cloud sync and share links
-- [ ] **M11** — Deployment and case study
+- [x] **M11a** — Deployed demo on GitHub Pages _(case study still to write)_
 
 ## Licence
 
