@@ -59,6 +59,27 @@ npm run dev
 | `npm run test:coverage` | Unit tests with coverage thresholds                          |
 | `npm run e2e`           | End-to-end tests (Playwright)                                |
 
+### On Windows
+
+Node 22 LTS or newer. Node 21 is end-of-life and ships an npm carrying a
+[known optional-dependency bug](https://github.com/npm/cli/issues/4828) that leaves Vite's
+native binary uninstalled; the symptom is `Cannot find native binding` on `npm run dev`. The
+cure is to delete `node_modules` and `package-lock.json` and run `npm install` again.
+
+### Deploying
+
+Pushing to the default branch builds and publishes to GitHub Pages. Pages has to be switched
+on for the repository once, by hand, under **Settings → Pages → Build and deployment → Source
+→ GitHub Actions**. A workflow token is not permitted to enable it, so until that is done the
+deploy job fails at `configure-pages` with a `Not Found`.
+
+### Your plan stays on your machine
+
+There is no server. A plan lives in the browser's own storage, which makes it private by
+default and also means it does not follow you between devices. **Save to a file** is how a plan
+travels — plain, indented JSON with its version at the top, so a plan outlives the app that
+drew it.
+
 ### Stack
 
 Vite · React 19 · TypeScript (strict, including `noUncheckedIndexedAccess` and
