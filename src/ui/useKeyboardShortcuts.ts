@@ -46,6 +46,9 @@ export function useKeyboardShortcuts(): void {
         case 'w':
           store.setTool('draw-wall');
           break;
+        case 'd':
+          store.setTool('place-opening');
+          break;
         case 'f': {
           const floor = store.document.floors.find((entry) => entry.id === store.activeFloorId);
           if (!floor) break;
@@ -58,16 +61,22 @@ export function useKeyboardShortcuts(): void {
         }
         case 'delete':
         case 'backspace': {
+          const openings = store.selection.filter((entry) => entry.kind === 'opening');
           const walls = store.selection.filter((entry) => entry.kind === 'wall');
-          if (walls.length === 0) break;
+          if (openings.length === 0 && walls.length === 0) break;
 
           event.preventDefault();
-          store.commit('Delete wall', (draft) => {
-            const floor = draft.floors.find((entry) => entry.id === store.activeFloorId);
-            if (!floor) return;
-            for (const wall of walls) floor.graph = removeWall(floor.graph, wall.id);
-          });
-          store.select([]);
+
+          for (const opening of openings) store.removeOpening(opening.id);
+
+          if (walls.length > 0) {
+            store.commit('Delete wall', (draft) => {
+              const floor = draft.floors.find((entry) => entry.id === store.activeFloorId);
+              if (!floor) return;
+              for (const wall of walls) floor.graph = removeWall(floor.graph, wall.id);
+            });
+            store.select([]);
+          }
           break;
         }
         default:

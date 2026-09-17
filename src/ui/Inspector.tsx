@@ -7,8 +7,10 @@ import {
   nodePoint,
   removeWall,
   updateWall,
+  wallLength,
   type WallKind,
 } from '../core/graph/wallGraph.ts';
+import { maxOpeningWidth } from '../core/openings/geometry.ts';
 import { roomsOf } from '../core/model/derive.ts';
 import { type Floor } from '../core/model/schema.ts';
 import { formatArea, formatLength } from '../core/units/length.ts';
@@ -46,6 +48,10 @@ export function Inspector() {
 
   if (target.kind === 'room') {
     return <RoomInspector floor={floor} roomId={target.id} />;
+  }
+
+  if (target.kind === 'opening' && floor.openings.some((entry) => entry.id === target.id)) {
+    return <OpeningInspector floor={floor} openingId={target.id} />;
   }
 
   return <Empty>Nothing to edit.</Empty>;
@@ -149,6 +155,168 @@ function WallInspector({ floor, wallId }: { floor: Floor; wallId: string }) {
         Delete wall
       </button>
     </Section>
+  );
+}
+
+/**
+ * A door or window.
+ *
+ * Hinge and side are two buttons rather than a dropdown because they are the
+ * fields most often wrong on first placement, and flipping them is something
+ * you do while looking at the plan rather than while reading a list. Which way
+ * a door opens decides whether it hits the bed.
+ */
+function OpeningInspector({ floor, openingId }: { floor: Floor; openingId: string }) {
+  const updateOpening = useEditorStore((state) => state.updateOpening);
+  const removeOpening = useEditorStore((state) => state.removeOpening);
+  const unit = useEditorStore((state) => state.document.unit);
+
+  const opening = floor.openings.find((entry) => entry.id === openingId);
+  if (!opening) return <Empty>That opening is no longer there.</Empty>;
+
+  const wall = floor.graph.walls[opening.wallId];
+  const hostLength = wall ? Math.round(wallLength(floor.graph, wall)) : 0;
+  const isDoor = opening.kind === 'door';
+
+  return (
+    <Section title={opening.label}>
+      <LengthInput
+        label="Width"
+        value={opening.width}
+        unit={unit}
+        min={300}
+        max={Math.max(300, maxOpeningWidth(hostLength))}
+        onChange={(width) => updateOpening(openingId, { width })}
+        hint={hostLength > 0 ? `Its wall is ${formatLength(hostLength, unit)} ${unit} long.` : ''}
+      />
+
+      <LengthInput
+        label="Height"
+        value={opening.height}
+        unit={unit}
+        min={300}
+        max={3000}
+        onChange={(height) => updateOpening(openingId, { height })}
+      />
+
+      <LengthInput
+        label="From the corner"
+        value={opening.offset}
+        unit={unit}
+        min={0}
+        max={Math.max(0, hostLength)}
+        onChange={(offset) => updateOpening(openingId, { offset })}
+        hint="Centre of the opening, measured along the wall."
+      />
+
+      {!isDoor && (
+        <LengthInput
+          label="Sill height"
+          value={opening.sillHeight}
+          unit={unit}
+          min={0}
+          max={2500}
+          onChange={(sillHeight) => updateOpening(openingId, { sillHeight })}
+          hint="Height of the bottom of the opening above the floor."
+        />
+      )}
+
+      {isDoor && (
+        <>
+          <Field label="Hinged at">
+            <Toggle
+              testId="opening-hinge"
+              options={[
+                { value: 'a', label: 'This end' },
+                { value: 'b', label: 'That end' },
+              ]}
+              value={opening.hinge}
+              onChange={(hinge) => updateOpening(openingId, { hinge: hinge as 'a' | 'b' })}
+            />
+          </Field>
+
+          <Field label="Opens towards">
+            <Toggle
+              testId="opening-side"
+              options={[
+                { value: 'left', label: 'One side' },
+                { value: 'right', label: 'The other' },
+              ]}
+              value={opening.side}
+              onChange={(side) => updateOpening(openingId, { side: side as 'left' | 'right' })}
+            />
+          </Field>
+
+          <Field label={`Open ${Math.round(opening.openAmount * 100)}%`}>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(opening.openAmount * 100)}
+              data-testid="opening-amount"
+              aria-label="How far open"
+              onChange={(event) =>
+                updateOpening(openingId, { openAmount: Number(event.target.value) / 100 })
+              }
+              className="w-full"
+            />
+          </Field>
+        </>
+      )}
+
+      <button
+        type="button"
+        data-testid="delete-opening"
+        onClick={() => removeOpening(openingId)}
+        className="mt-2 w-full rounded border py-1.5 text-xs font-medium"
+        style={{
+          borderColor: 'var(--color-severity-error)',
+          color: 'var(--color-severity-error)',
+        }}
+      >
+        Delete {isDoor ? 'door' : 'opening'}
+      </button>
+    </Section>
+  );
+}
+
+/** Two or three mutually exclusive choices, shown as a row of buttons. */
+function Toggle({
+  options,
+  value,
+  onChange,
+  testId,
+}: {
+  options: readonly { value: string; label: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  testId: string;
+}) {
+  return (
+    <div
+      className="flex overflow-hidden rounded border"
+      style={{ borderColor: 'var(--surface-border-strong)' }}
+      data-testid={testId}
+    >
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(option.value)}
+            className="flex-1 py-1 text-[11px]"
+            style={{
+              background: active ? 'var(--color-accent-500)' : 'var(--surface-raised)',
+              color: active ? '#fff' : 'var(--text-secondary)',
+            }}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

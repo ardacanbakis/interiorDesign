@@ -19,6 +19,7 @@ import { reconcileRooms, type Room, type RoomProps } from '../graph/roomIdentity
 import { containsPoint } from '../geometry/polygon.ts';
 import { type Vec2 } from '../geometry/vec2.ts';
 import { type WallGraph } from '../graph/wallGraph.ts';
+import { pruneOrphanedOpenings } from './edits.ts';
 import { type Floor } from './schema.ts';
 
 const facesCache = new WeakMap<WallGraph, Face[]>();
@@ -76,8 +77,12 @@ export function roomsOf(floor: Floor): DerivedRoom[] {
  * unsaved.
  */
 export function reconcileFloor(floor: Floor): Floor {
-  const { props } = reconcileRooms(facesOf(floor.graph), floor.rooms);
-  return roomPropsEqual(props, floor.rooms) ? floor : { ...floor, rooms: [...props] };
+  // Openings first: an opening whose wall has been deleted would throw the
+  // moment anything tried to draw it.
+  const pruned = pruneOrphanedOpenings(floor);
+
+  const { props } = reconcileRooms(facesOf(pruned.graph), pruned.rooms);
+  return roomPropsEqual(props, pruned.rooms) ? pruned : { ...pruned, rooms: [...props] };
 }
 
 function roomPropsEqual(left: readonly RoomProps[], right: readonly RoomProps[]): boolean {

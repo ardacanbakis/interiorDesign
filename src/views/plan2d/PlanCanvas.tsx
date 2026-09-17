@@ -2,15 +2,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { boundingBox } from '../../core/geometry/polygon.ts';
 import { type Vec2 } from '../../core/geometry/vec2.ts';
-import { allNodes } from '../../core/graph/wallGraph.ts';
+import {
+  allNodes,
+  findWallAt,
+  getWall,
+  nodePoint,
+  wallLength,
+} from '../../core/graph/wallGraph.ts';
+import { parameterAlong } from '../../core/geometry/segment.ts';
+import { clampOffset, fitsOnWall, openingFrame } from '../../core/openings/geometry.ts';
+import { defaultPresetFor, presetById } from '../../core/openings/defaults.ts';
 import { drawRoomRect, drawWallRun, setWallLength } from '../../core/graph/operations.ts';
 import { roomsOf } from '../../core/model/derive.ts';
+import { applyGraphEdit } from '../../core/model/edits.ts';
 import { parseLength } from '../../core/units/length.ts';
 import { activeFloor, useEditorStore } from '../../state/store.ts';
 import { roomDimensions, wallDimensions, type Dimension } from './dimensions.ts';
 import { DimensionsLayer } from './layers/DimensionsLayer.tsx';
 import { GridLayer } from './layers/GridLayer.tsx';
 import { RoomsLayer } from './layers/RoomsLayer.tsx';
+import { OpeningsLayer } from './layers/OpeningsLayer.tsx';
 import { WallsLayer } from './layers/WallsLayer.tsx';
 import { snapPoint, squareToAxis, type Snap } from './snapping.ts';
 import { polygonPath } from './svgPath.ts';
@@ -46,6 +57,14 @@ type Interaction =
       readonly moved: boolean;
     };
 
+/** Where an opening would land if the pointer were clicked right now. */
+interface OpeningPreview {
+  readonly wallId: string;
+  readonly offset: number;
+  readonly width: number;
+  readonly fits: boolean;
+}
+
 /** An open dimension input, floating over the canvas. */
 interface DimensionEdit {
   readonly dimension: Dimension;
@@ -64,11 +83,14 @@ export function PlanCanvas() {
   const select = useEditorStore((state) => state.select);
   const commit = useEditorStore((state) => state.commit);
   const unit = useEditorStore((state) => state.document.unit);
+  const addOpening = useEditorStore((state) => state.addOpening);
+  const openingPresetId = useEditorStore((state) => state.openingPresetId);
 
   const [interaction, setInteraction] = useState<Interaction>({ kind: 'idle' });
   const [snap, setSnap] = useState<Snap | null>(null);
   const [editing, setEditing] = useState<DimensionEdit | null>(null);
   const [spaceHeld, setSpaceHeld] = useState(false);
+  const [openingHover, setOpeningHover] = useState<OpeningPreview | null>(null);
 
   const graph = floor?.graph;
   const rooms = useMemo(() => (floor ? roomsOf(floor) : []), [floor]);
@@ -80,6 +102,41 @@ export function PlanCanvas() {
   const selectedRoomIds = useMemo(
     () => new Set(selection.filter((entry) => entry.kind === 'room').map((entry) => entry.id)),
     [selection],
+  );
+  const selectedOpeningIds = useMemo(
+    () => new Set(selection.filter((entry) => entry.kind === 'opening').map((entry) => entry.id)),
+    [selection],
+  );
+
+  /**
+   * Work out where an opening would go for a pointer position.
+   *
+   * Openings live on walls, so the pointer is projected onto the nearest wall
+   * within reach rather than snapped to the grid — you point at a wall, not at
+   * a coordinate.
+   */
+  const previewOpeningAt = useCallback(
+    (raw: Vec2): OpeningPreview | null => {
+      if (!graph) return null;
+
+      const wall = findWallAt(graph, raw, screenPixels(viewport, 24));
+      if (!wall) return null;
+
+      const preset = presetById(openingPresetId) ?? defaultPresetFor('door');
+      const a = nodePoint(graph, wall.a);
+      const b = nodePoint(graph, wall.b);
+      const length = wallLength(graph, wall);
+
+      const t = Math.min(1, Math.max(0, parameterAlong({ a, b }, raw)));
+
+      return {
+        wallId: wall.id,
+        offset: clampOffset(length, preset.width, t * length),
+        width: preset.width,
+        fits: fitsOnWall(length, preset.width),
+      };
+    },
+    [graph, viewport, openingPresetId],
   );
 
   const pointerToModel = useCallback(
@@ -237,6 +294,12 @@ export function PlanCanvas() {
       return;
     }
 
+    if (tool === 'place-opening') {
+      const preview = previewOpeningAt(raw);
+      if (preview?.fits) addOpening(preview.wallId, preview.offset);
+      return;
+    }
+
     // Select tool, and the pointer reached the background: nothing was hit.
     select([]);
   };
@@ -294,6 +357,11 @@ export function PlanCanvas() {
       return;
     }
 
+    if (tool === 'place-opening') {
+      setOpeningHover(previewOpeningAt(raw));
+      return;
+    }
+
     // Idle: still show where a click would land, so snapping is visible before
     // committing to it.
     if (tool !== 'select') {
@@ -323,9 +391,17 @@ export function PlanCanvas() {
       if (Math.abs(current.x - start.x) < 1 || Math.abs(current.y - start.y) < 1) return;
 
       commit('Draw room', (draft) => {
-        const target = draft.floors.find((entry) => entry.id === floor?.id);
+        const index = draft.floors.findIndex((entry) => entry.id === floor?.id);
+        const target = draft.floors[index];
         if (!target) return;
-        target.graph = drawRoomRect(target.graph, start, current, 'exterior').graph;
+
+        // Through `applyGraphEdit` rather than assigning the graph directly, so
+        // any door on a wall this rectangle splits moves onto the right half
+        // instead of being orphaned.
+        draft.floors[index] = applyGraphEdit(
+          target,
+          drawRoomRect(target.graph, start, current, 'exterior'),
+        ).floor;
       });
     }
   };
@@ -337,9 +413,14 @@ export function PlanCanvas() {
       if (points.length < 2) return;
 
       commit('Draw wall', (draft) => {
-        const target = draft.floors.find((entry) => entry.id === floor?.id);
+        const index = draft.floors.findIndex((entry) => entry.id === floor?.id);
+        const target = draft.floors[index];
         if (!target) return;
-        target.graph = drawWallRun(target.graph, points, 'interior').graph;
+
+        draft.floors[index] = applyGraphEdit(
+          target,
+          drawWallRun(target.graph, points, 'interior'),
+        ).floor;
       });
     },
     [commit, floor?.id],
@@ -479,6 +560,23 @@ export function PlanCanvas() {
             />
           )}
 
+          <OpeningsLayer
+            graph={graph}
+            openings={floor.openings}
+            viewport={viewport}
+            selectedIds={selectedOpeningIds}
+            {...(tool === 'select'
+              ? {
+                  onSelect: (openingId: string, additive: boolean) =>
+                    select([{ kind: 'opening', id: openingId }], additive ? 'add' : 'replace'),
+                }
+              : {})}
+          />
+
+          {tool === 'place-opening' && openingHover && (
+            <OpeningPreviewMark graph={graph} preview={openingHover} />
+          )}
+
           <DraftOverlay interaction={interaction} viewport={viewport} />
           <SnapGuides snap={snap} viewport={viewport} />
 
@@ -538,6 +636,33 @@ function isTypingInto(target: EventTarget | null): boolean {
     target.tagName === 'TEXTAREA' ||
     target.tagName === 'SELECT' ||
     target.isContentEditable
+  );
+}
+
+/** A ghost of the opening about to be placed. */
+function OpeningPreviewMark({
+  graph,
+  preview,
+}: {
+  graph: NonNullable<ReturnType<typeof activeFloor>>['graph'];
+  preview: OpeningPreview;
+}) {
+  const wall = graph.walls[preview.wallId];
+  if (!wall) return null;
+
+  const frame = openingFrame(graph, getWall(graph, preview.wallId), {
+    offset: preview.offset,
+    width: preview.width,
+  });
+
+  return (
+    <path
+      d={polygonPath(frame.cutout)}
+      fill={preview.fits ? 'var(--color-accent-500)' : 'var(--color-severity-error)'}
+      fillOpacity={0.45}
+      pointerEvents="none"
+      data-testid="opening-preview"
+    />
   );
 }
 

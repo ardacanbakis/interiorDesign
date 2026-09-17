@@ -3,6 +3,7 @@ import { type ReactNode } from 'react';
 import { boundingBox } from '../core/geometry/polygon.ts';
 import { allNodes } from '../core/graph/wallGraph.ts';
 import { fitTo, zoomAt } from '../views/plan2d/viewport.ts';
+import { OPENING_PRESETS } from '../core/openings/defaults.ts';
 import { activeFloor, useEditorStore, type ToolId } from '../state/store.ts';
 
 interface ToolDefinition {
@@ -53,6 +54,18 @@ const TOOLS: readonly ToolDefinition[] = [
         strokeWidth="1.6"
         strokeLinecap="round"
       />
+    ),
+  },
+  {
+    id: 'place-opening',
+    label: 'Door',
+    shortcut: 'D',
+    hint: 'Point at a wall to place the opening chosen on the right.',
+    icon: (
+      <g fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+        <path d="M4 14V4h5v10" />
+        <path d="M9 4a6 6 0 016 6h-6" strokeDasharray="1.6 1.6" />
+      </g>
     ),
   },
 ];
@@ -135,6 +148,8 @@ export function Toolbar() {
 
       <Divider />
 
+      {tool === 'place-opening' && <OpeningPresetPicker />}
+
       <ZoomControls />
 
       <p
@@ -144,6 +159,40 @@ export function Toolbar() {
         {activeHint}
       </p>
     </header>
+  );
+}
+
+/**
+ * Which opening the tool will place next.
+ *
+ * Shown only while the tool is active. Choosing the size before placing rather
+ * than correcting it afterwards matters because the width decides whether the
+ * opening fits the wall at all — a 100cm entrance door simply will not go on a
+ * 90cm return.
+ */
+function OpeningPresetPicker() {
+  const presetId = useEditorStore((state) => state.openingPresetId);
+  const setPreset = useEditorStore((state) => state.setOpeningPreset);
+
+  return (
+    <select
+      value={presetId}
+      aria-label="Opening type"
+      data-testid="opening-preset"
+      onChange={(event) => setPreset(event.target.value)}
+      className="h-8 rounded border px-2 text-xs"
+      style={{
+        background: 'var(--surface-raised)',
+        color: 'var(--text-primary)',
+        borderColor: 'var(--surface-border-strong)',
+      }}
+    >
+      {OPENING_PRESETS.map((preset) => (
+        <option key={preset.id} value={preset.id}>
+          {preset.label} — {preset.width / 10}cm
+        </option>
+      ))}
+    </select>
   );
 }
 

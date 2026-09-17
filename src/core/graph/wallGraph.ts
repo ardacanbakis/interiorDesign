@@ -80,6 +80,16 @@ export interface WallSplit {
   readonly parts: readonly [WallId, WallId];
   /** Where along the original wall the split fell, in [0, 1] from a to b. */
   readonly t: number;
+  /**
+   * How long the original wall was.
+   *
+   * Recorded because re-homing an opening needs the distance the split fell at,
+   * in millimetres, and by the time the caller sees this the original wall is
+   * gone. Deriving it from the two parts works only for a single split; a run
+   * that cuts the same wall twice leaves the second record referring to a part
+   * whose length has already changed.
+   */
+  readonly originalLength: Mm;
 }
 
 /**
@@ -499,7 +509,13 @@ export function splitWall(
 
   return {
     graph: next,
-    split: { originalWallId: wallId, nodeId, parts: [firstId, secondId], t },
+    split: {
+      originalWallId: wallId,
+      nodeId,
+      parts: [firstId, secondId],
+      t,
+      originalLength: distance(segment.a, segment.b),
+    },
   };
 }
 

@@ -16,6 +16,7 @@
 import { create } from 'zustand';
 
 import { reconcileFloor } from '../core/model/derive.ts';
+import { applyGraphEdit } from '../core/model/edits.ts';
 import { createDocument, findFloor } from '../core/model/document.ts';
 import {
   type FloorId,
@@ -28,7 +29,10 @@ import { createRoomFromInnerSize } from '../core/graph/operations.ts';
 import { allNodes } from '../core/graph/wallGraph.ts';
 import { boundingBox } from '../core/geometry/polygon.ts';
 import { type Mm } from '../core/units/length.ts';
-import { type NodeId, type WallId } from '../core/graph/wallGraph.ts';
+import { type NodeId, wallLength, type WallId } from '../core/graph/wallGraph.ts';
+import { clampOffset, fitsOnWall } from '../core/openings/geometry.ts';
+import { defaultPresetFor, openingFromPreset, presetById } from '../core/openings/defaults.ts';
+import { type Opening } from '../core/model/schema.ts';
 import { type LengthUnit } from '../core/units/length.ts';
 import {
   applyEdit,
@@ -60,7 +64,7 @@ export type SelectionMode = 'replace' | 'add' | 'toggle';
  * floor-plan editors end up with people accidentally dragging a wall across
  * the house while trying to click on it.
  */
-export type ToolId = 'select' | 'draw-room' | 'draw-wall';
+export type ToolId = 'select' | 'draw-room' | 'draw-wall' | 'place-opening';
 
 export interface NewRoomSpec {
   /** Clear distance between wall faces. */
@@ -133,6 +137,14 @@ export interface EditorStore {
    */
   createRoom: (spec: NewRoomSpec) => void;
 
+  /** Which preset the opening tool will place next. */
+  openingPresetId: string;
+  setOpeningPreset: (presetId: string) => void;
+  /** Put an opening on a wall at a distance along it, and select it. */
+  addOpening: (wallId: WallId, offset: Mm) => void;
+  updateOpening: (openingId: OpeningId, changes: Partial<Opening>) => void;
+  removeOpening: (openingId: OpeningId) => void;
+
   // ---- Session actions ----
   setActiveFloor: (floorId: FloorId) => void;
   select: (targets: readonly SelectionTarget[], mode?: SelectionMode) => void;
@@ -159,7 +171,14 @@ function normalize(draft: HouseDocument): void {
 
 function initialState(): Pick<
   EditorStore,
-  'document' | 'history' | 'dirty' | 'activeFloorId' | 'selection' | 'viewport' | 'tool'
+  | 'document'
+  | 'history'
+  | 'dirty'
+  | 'activeFloorId'
+  | 'selection'
+  | 'viewport'
+  | 'tool'
+  | 'openingPresetId'
 > {
   const document = createDocument();
   return {
@@ -170,6 +189,7 @@ function initialState(): Pick<
     selection: [],
     viewport: DEFAULT_VIEWPORT,
     tool: 'select',
+    openingPresetId: 'door-80',
   };
 }
 
@@ -265,18 +285,24 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
         ? { x: 0, y: 0 }
         : { x: boundingBox(existingNodes).maxX + NEW_ROOM_GAP, y: 0 };
 
-    const graph = createRoomFromInnerSize(floor.graph, {
-      width: spec.width,
-      depth: spec.depth,
-      thickness: spec.thickness,
-      kind: 'exterior',
-      origin,
-    }).graph;
+    // Through `applyGraphEdit` so that if the new room's walls happen to meet
+    // something already drawn, any openings on what gets split move with it.
+    const edited = applyGraphEdit(
+      floor,
+      createRoomFromInnerSize(floor.graph, {
+        width: spec.width,
+        depth: spec.depth,
+        thickness: spec.thickness,
+        kind: 'exterior',
+        origin,
+      }),
+    ).floor;
+    const graph = edited.graph;
 
     // Reconcile up front so the room that just appeared can be named as part of
     // the same edit; the store's own pass afterwards then finds nothing to do.
     const before = new Set(floor.rooms.map((room) => room.id));
-    const reconciled = reconcileFloor({ ...floor, graph });
+    const reconciled = reconcileFloor(edited);
     const fresh = reconciled.rooms.find((room) => !before.has(room.id));
 
     const rooms = reconciled.rooms.map((room) =>
@@ -288,11 +314,77 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
       if (!target) return;
 
       target.graph = graph;
+      target.openings = edited.openings;
       target.rooms = rooms;
       target.ceilingHeight = spec.ceilingHeight;
     });
 
     if (fresh) get().select([{ kind: 'room', id: fresh.id }]);
+  },
+
+  setOpeningPreset: (presetId) => set({ openingPresetId: presetId }),
+
+  addOpening: (wallId, offset) => {
+    const floorId = get().activeFloorId;
+    const floor = get().document.floors.find((entry) => entry.id === floorId);
+    const wall = floor?.graph.walls[wallId];
+    if (!floor || !wall) return;
+
+    const preset = presetById(get().openingPresetId) ?? defaultPresetFor('door');
+    const length = wallLength(floor.graph, wall);
+
+    // A door wider than the wall it is on is not a door. Better to refuse than
+    // to place something that can never be built.
+    if (!fitsOnWall(length, preset.width)) return;
+
+    const id = nextOpeningId(floor.openings);
+    const opening = openingFromPreset(
+      id,
+      preset,
+      wallId,
+      clampOffset(length, preset.width, offset),
+    );
+
+    get().commit('Add opening', (draft) => {
+      const target = draft.floors.find((entry) => entry.id === floorId);
+      target?.openings.push(opening);
+    });
+
+    get().select([{ kind: 'opening', id }]);
+  },
+
+  updateOpening: (openingId, changes) => {
+    const floorId = get().activeFloorId;
+
+    get().commit('Change opening', (draft) => {
+      const target = draft.floors.find((entry) => entry.id === floorId);
+      const index = target?.openings.findIndex((entry) => entry.id === openingId) ?? -1;
+      if (!target || index < 0) return;
+
+      const next = { ...target.openings[index]!, ...changes };
+      const wall = target.graph.walls[next.wallId];
+      if (wall) {
+        // Re-clamp after any change: widening a door can push it off the end of
+        // its wall, and the offset has to follow.
+        const length = wallLength(target.graph, wall);
+        next.width = Math.min(next.width, Math.floor(length));
+        next.offset = clampOffset(length, next.width, next.offset);
+      }
+
+      target.openings[index] = next;
+    });
+  },
+
+  removeOpening: (openingId) => {
+    const floorId = get().activeFloorId;
+
+    get().commit('Delete opening', (draft) => {
+      const target = draft.floors.find((entry) => entry.id === floorId);
+      if (!target) return;
+      target.openings = target.openings.filter((entry) => entry.id !== openingId);
+    });
+
+    get().select([]);
   },
 
   setActiveFloor: (floorId) => {
@@ -335,6 +427,18 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
   // do something surprising.
   setTool: (tool) => set({ tool, selection: [] }),
 }));
+
+/** Ids run o1, o2, … continuing from the highest already on the floor. */
+function nextOpeningId(openings: readonly Opening[]): string {
+  let highest = 0;
+  for (const opening of openings) {
+    const suffix = Number(opening.id.slice(1));
+    if (opening.id.startsWith('o') && Number.isInteger(suffix) && suffix > highest) {
+      highest = suffix;
+    }
+  }
+  return `o${highest + 1}`;
+}
 
 /**
  * Drop selection entries pointing at things that no longer exist.
