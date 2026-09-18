@@ -105,7 +105,7 @@ export function NewRoomPanel({ onDone }: { onDone?: () => void }) {
           onChange={setCeilingHeight}
         />
         <LengthInput
-          label="Wall"
+          label="Wall thickness"
           value={thickness}
           unit={unit}
           min={50}

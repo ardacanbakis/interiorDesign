@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 
 import { downloadDocument, readDocumentFile } from '../persistence/file.ts';
 import { useEditorStore } from '../state/store.ts';
+import { Tooltip } from './Tooltip.tsx';
 
 /**
  * Save to a file, and open one.
@@ -27,6 +28,7 @@ export function FileMenu() {
     <div className="flex items-center gap-1">
       <ToolbarButton
         label="Save to a file"
+        shortcut="Ctrl+S"
         testId="save-file"
         onClick={() => downloadDocument(document)}
       >
@@ -40,7 +42,12 @@ export function FileMenu() {
         />
       </ToolbarButton>
 
-      <ToolbarButton label="Open a file" testId="open-file" onClick={() => input.current?.click()}>
+      <ToolbarButton
+        label="Open a file"
+        shortcut="Ctrl+O"
+        testId="open-file"
+        onClick={() => input.current?.click()}
+      >
         <path
           d="M9 15V7m0 0L6 10m3-3l3 3M4 6V4a1 1 0 011-1h8a1 1 0 011 1v2"
           fill="none"
@@ -90,6 +97,7 @@ export function FileMenu() {
 
       <ToolbarButton
         label="Start a new plan"
+        shortcut="Ctrl+N"
         testId="new-file"
         onClick={() => {
           // Replacing what is on screen is worth a question; the current plan
@@ -117,28 +125,31 @@ const DISCARD_WARNING =
 
 function ToolbarButton({
   label,
+  shortcut,
   testId,
   onClick,
   children,
 }: {
   label: string;
+  shortcut?: string;
   testId: string;
   onClick: () => void;
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      data-testid={testId}
-      className="grid h-8 w-8 place-items-center rounded transition-colors"
-      style={{ color: 'var(--text-secondary)' }}
-    >
-      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-        {children}
-      </svg>
-    </button>
+    <Tooltip label={label} shortcut={shortcut}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        data-testid={testId}
+        className="grid h-8 w-8 place-items-center rounded transition-colors"
+        style={{ color: 'var(--text-secondary)' }}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          {children}
+        </svg>
+      </button>
+    </Tooltip>
   );
 }

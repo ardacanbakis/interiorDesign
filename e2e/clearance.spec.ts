@@ -54,7 +54,7 @@ test.beforeEach(async ({ page }) => {
 
   await page.getByLabel('Width').fill('300');
   await page.getByLabel('Depth').fill('400');
-  await page.getByLabel('Wall').fill('10');
+  await page.getByLabel('Wall thickness').fill('10');
   await page.getByTestId('new-room-type').selectOption('bedroom');
   await page.getByTestId('create-room').click();
   await expect(page.getByTestId('room-count')).toHaveText('1 room');

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 
 import { boundingBox } from '../core/geometry/polygon.ts';
 import { allNodes, removeWall } from '../core/graph/wallGraph.ts';
+import { downloadDocument } from '../persistence/file.ts';
 import { fitTo } from '../views/plan2d/viewport.ts';
 import { useEditorStore } from '../state/store.ts';
 
@@ -30,6 +31,29 @@ export function useKeyboardShortcuts(): void {
       if (meta && event.key.toLowerCase() === 'y') {
         event.preventDefault();
         store.redo();
+        return;
+      }
+
+      // The file keys people already have in their fingers. Each one is also a
+      // browser shortcut, so each has to be taken over explicitly — and each is
+      // worth taking over, because "save the page" and "new window" are never
+      // what someone means while looking at a floor plan.
+      if (meta && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        downloadDocument(store.document);
+        return;
+      }
+
+      if (meta && (event.key.toLowerCase() === 'o' || event.key.toLowerCase() === 'n')) {
+        event.preventDefault();
+        // Opening and starting again both belong to the file menu, which owns
+        // the file input and the confirmation. Clicking its button is the
+        // honest way to reach them rather than duplicating either here.
+        const selector = event.key.toLowerCase() === 'o' ? 'open-file' : 'new-file';
+        const button = window.document.querySelector<HTMLButtonElement>(
+          `[data-testid="${selector}"]`,
+        );
+        button?.click();
         return;
       }
 

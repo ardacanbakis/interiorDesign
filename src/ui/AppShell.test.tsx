@@ -150,8 +150,8 @@ describe('AppShell — creating a room from measurements', () => {
     await user.type(screen.getByLabelText('Width'), '360');
     await user.clear(screen.getByLabelText('Depth'));
     await user.type(screen.getByLabelText('Depth'), '420');
-    await user.clear(screen.getByLabelText('Wall'));
-    await user.type(screen.getByLabelText('Wall'), '10');
+    await user.clear(screen.getByLabelText('Wall thickness'));
+    await user.type(screen.getByLabelText('Wall thickness'), '10');
 
     // 3.6m x 4.2m = 15.12 m², and the form says so before committing.
     expect(screen.getByTestId('new-room-preview')).toHaveTextContent('15.12 m²');

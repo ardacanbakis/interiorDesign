@@ -7,6 +7,7 @@ import { OPENING_PRESETS } from '../core/openings/defaults.ts';
 import { findDefinition } from '../core/catalog/registry.ts';
 import { activeFloor, useEditorStore, type ToolId } from '../state/store.ts';
 import { FileMenu } from './FileMenu.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 interface ToolDefinition {
   readonly id: ToolId;
@@ -86,7 +87,9 @@ export function Toolbar() {
 
   return (
     <header
-      className="flex h-12 shrink-0 items-center gap-3 border-b px-3"
+      // Positioned and lifted, so a tooltip hanging below a button paints over
+      // the plan rather than being covered by it.
+      className="relative z-20 flex h-12 shrink-0 items-center gap-3 border-b px-3"
       style={{ background: 'var(--surface-panel)', borderColor: 'var(--surface-border)' }}
     >
       <div className="flex items-center gap-2">
@@ -226,24 +229,25 @@ function ArmedObject() {
       data-testid="armed-object"
     >
       <span>Placing {definition.label.toLowerCase()}</span>
-      <button
-        type="button"
-        onClick={() => setTool('select')}
-        aria-label="Stop placing"
-        title="Stop placing (Escape)"
-        data-testid="disarm-object"
-        className="grid h-4 w-4 place-items-center rounded-full"
-        style={{ background: 'rgba(255,255,255,0.25)' }}
-      >
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-          <path
-            d="M2 2l6 6M8 2l-6 6"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-          />
-        </svg>
-      </button>
+      <Tooltip label="Stop placing" shortcut="Esc">
+        <button
+          type="button"
+          onClick={() => setTool('select')}
+          aria-label="Stop placing"
+          data-testid="disarm-object"
+          className="grid h-4 w-4 place-items-center rounded-full"
+          style={{ background: 'rgba(255,255,255,0.25)' }}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <path
+              d="M2 2l6 6M8 2l-6 6"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      </Tooltip>
     </div>
   );
 }
@@ -303,23 +307,28 @@ function ToolButton({
   testId: string;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      title={`${label} (${shortcut})`}
-      data-testid={testId}
-      className="flex h-8 items-center gap-1.5 rounded px-2 text-xs font-medium transition-colors"
-      style={{
-        background: active ? 'var(--color-accent-500)' : 'transparent',
-        color: active ? '#fff' : 'var(--text-secondary)',
-      }}
-    >
-      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-        {children}
-      </svg>
-      <span className="hidden sm:inline">{label}</span>
-    </button>
+    <Tooltip label={label} shortcut={shortcut}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        // Named explicitly: below the `sm` breakpoint the visible label is
+        // hidden, and without this the button would have no accessible name at
+        // exactly the width where it is hardest to guess from the icon.
+        aria-label={label}
+        data-testid={testId}
+        className="flex h-8 items-center gap-1.5 rounded px-2 text-xs font-medium transition-colors"
+        style={{
+          background: active ? 'var(--color-accent-500)' : 'transparent',
+          color: active ? '#fff' : 'var(--text-secondary)',
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          {children}
+        </svg>
+        <span className="hidden sm:inline">{label}</span>
+      </button>
+    </Tooltip>
   );
 }
 
@@ -339,24 +348,25 @@ function IconButton({
   testId: string;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={shortcut ? `${label} (${shortcut})` : label}
-      aria-label={label}
-      data-testid={testId}
-      className="grid h-8 w-8 place-items-center rounded transition-colors"
-      style={{
-        color: 'var(--text-secondary)',
-        opacity: disabled ? 0.35 : 1,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-      }}
-    >
-      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-        {children}
-      </svg>
-    </button>
+    <Tooltip label={label} shortcut={shortcut}>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        data-testid={testId}
+        className="grid h-8 w-8 place-items-center rounded transition-colors"
+        style={{
+          color: 'var(--text-secondary)',
+          opacity: disabled ? 0.35 : 1,
+          cursor: disabled ? 'not-allowed' : 'pointer',
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          {children}
+        </svg>
+      </button>
+    </Tooltip>
   );
 }
 
