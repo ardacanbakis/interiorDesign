@@ -1,10 +1,14 @@
 name: Deploy
 
-# The live demo. Published from the working branch rather than from main,
-# because that is where the work is; point this at main once there is one.
+# The live demo. Both branch names are listed because the working branch is the
+# default one today and `main` is where this lands eventually — naming only one
+# means deploys stop silently the day that changes, which is exactly the kind of
+# failure nobody notices for a fortnight.
 on:
   push:
-    branches: ['claude/sleepy-ptolemy-a5igln']
+    branches:
+      - main
+      - claude/sleepy-ptolemy-a5igln
   workflow_dispatch:
 
 # Only the permissions Pages actually needs.
