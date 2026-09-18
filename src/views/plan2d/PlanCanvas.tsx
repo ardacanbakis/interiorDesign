@@ -11,7 +11,6 @@ import {
 } from '../../core/graph/wallGraph.ts';
 import { parameterAlong } from '../../core/geometry/segment.ts';
 import { clampOffset, fitsOnWall, openingFrame } from '../../core/openings/geometry.ts';
-import { defaultPresetFor, presetById } from '../../core/openings/defaults.ts';
 import { drawRoomRect, drawWallRun, setWallLength } from '../../core/graph/operations.ts';
 import { getDefinition } from '../../core/catalog/registry.ts';
 import { type Item } from '../../core/model/schema.ts';
@@ -19,7 +18,12 @@ import { roomsOf } from '../../core/model/derive.ts';
 import { issuesAbout, issuesOf } from '../../core/rules/engine.ts';
 import { applyGraphEdit } from '../../core/model/edits.ts';
 import { parseLength } from '../../core/units/length.ts';
-import { activeFloor, useEditorStore } from '../../state/store.ts';
+import {
+  activeFloor,
+  activeOpeningPreset,
+  isOpeningTool,
+  useEditorStore,
+} from '../../state/store.ts';
 import { roomDimensions, wallDimensions, type Dimension } from './dimensions.ts';
 import { DimensionsLayer } from './layers/DimensionsLayer.tsx';
 import { GridLayer } from './layers/GridLayer.tsx';
@@ -99,7 +103,7 @@ export function PlanCanvas() {
   const commit = useEditorStore((state) => state.commit);
   const unit = useEditorStore((state) => state.document.unit);
   const addOpening = useEditorStore((state) => state.addOpening);
-  const openingPresetId = useEditorStore((state) => state.openingPresetId);
+  const openingPreset = useEditorStore(activeOpeningPreset);
   const placeItemKind = useEditorStore((state) => state.placeItemKind);
   const addItem = useEditorStore((state) => state.addItem);
   const updateItem = useEditorStore((state) => state.updateItem);
@@ -210,7 +214,7 @@ export function PlanCanvas() {
       const wall = findWallAt(graph, raw, screenPixels(viewport, 24));
       if (!wall) return null;
 
-      const preset = presetById(openingPresetId) ?? defaultPresetFor('door');
+      const preset = openingPreset;
       const a = nodePoint(graph, wall.a);
       const b = nodePoint(graph, wall.b);
       const length = wallLength(graph, wall);
@@ -224,7 +228,7 @@ export function PlanCanvas() {
         fits: fitsOnWall(length, preset.width),
       };
     },
-    [graph, viewport, openingPresetId],
+    [graph, viewport, openingPreset],
   );
 
   const pointerToModel = useCallback(
@@ -382,9 +386,9 @@ export function PlanCanvas() {
       return;
     }
 
-    if (tool === 'place-opening') {
+    if (isOpeningTool(tool)) {
       const preview = previewOpeningAt(raw);
-      if (preview?.fits) addOpening(preview.wallId, preview.offset);
+      if (preview?.fits) addOpening(preview.wallId, preview.offset, openingPreset.id);
       return;
     }
 
@@ -476,7 +480,7 @@ export function PlanCanvas() {
       return;
     }
 
-    if (tool === 'place-opening') {
+    if (isOpeningTool(tool)) {
       setOpeningHover(previewOpeningAt(raw));
       return;
     }
@@ -755,7 +759,7 @@ export function PlanCanvas() {
             viewport={viewport}
           />
 
-          {tool === 'place-opening' && openingHover && (
+          {isOpeningTool(tool) && openingHover && (
             <OpeningPreviewMark graph={graph} preview={openingHover} />
           )}
 

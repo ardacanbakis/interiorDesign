@@ -16,7 +16,7 @@ test('the app is usable without a mouse', async ({ page }) => {
   // Every control in the toolbar has to be reachable and named, because a
   // recruiter running an accessibility check is exactly the sort of visitor
   // this project expects.
-  const tools = ['Select', 'Room', 'Wall', 'Door'];
+  const tools = ['Select', 'Room', 'Wall', 'Door', 'Window'];
 
   const buttons = page.getByRole('toolbar', { name: 'Drawing tools' }).getByRole('button');
   await expect(buttons).toHaveCount(tools.length);

@@ -74,7 +74,8 @@ test('pointing at a wall places a door on it', async ({ page }) => {
 });
 
 test('the preset picker decides what gets placed', async ({ page }) => {
-  await page.getByTestId('tool-place-opening').click();
+  // A window has its own tool now, rather than hiding in the door tool's list.
+  await page.getByTestId('tool-place-window').click();
   await page.getByTestId('opening-preset').selectOption('window-120');
 
   const target = await screenOf(page, { x: 1800, y: -50 });
@@ -158,4 +159,19 @@ test('the door opens and closes', async ({ page }) => {
 
   await slider.fill('100');
   expect((await openings(page))[0]!.openAmount).toBe(1);
+});
+
+test('the window tool remembers its own size, separately from the door tool', async ({ page }) => {
+  await page.getByTestId('tool-place-window').click();
+  await page.getByTestId('opening-preset').selectOption('window-180');
+
+  // Over to doors and back: the window size must still be what was chosen.
+  await page.keyboard.press('d');
+  await expect(page.getByTestId('opening-preset')).toHaveValue('door-80');
+  await page.keyboard.press('Shift+W');
+  await expect(page.getByTestId('opening-preset')).toHaveValue('window-180');
+
+  // And the door list never offers a window, nor the other way round.
+  const options = await page.getByTestId('opening-preset').locator('option').allTextContents();
+  expect(options.every((label) => /window/i.test(label))).toBe(true);
 });

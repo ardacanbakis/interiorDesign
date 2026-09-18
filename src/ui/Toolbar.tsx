@@ -5,7 +5,13 @@ import { allNodes } from '../core/graph/wallGraph.ts';
 import { fitTo, zoomAt } from '../views/plan2d/viewport.ts';
 import { OPENING_PRESETS } from '../core/openings/defaults.ts';
 import { findDefinition } from '../core/catalog/registry.ts';
-import { activeFloor, useEditorStore, type ToolId } from '../state/store.ts';
+import {
+  activeFloor,
+  isOpeningTool,
+  OPENING_TOOLS,
+  useEditorStore,
+  type ToolId,
+} from '../state/store.ts';
 import { FileMenu } from './FileMenu.tsx';
 import { Tooltip } from './Tooltip.tsx';
 
@@ -63,11 +69,23 @@ const TOOLS: readonly ToolDefinition[] = [
     id: 'place-opening',
     label: 'Door',
     shortcut: 'D',
-    hint: 'Point at a wall to place the opening chosen on the right.',
+    hint: 'Point at a wall to place the door chosen on the right.',
     icon: (
       <g fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
         <path d="M4 14V4h5v10" />
         <path d="M9 4a6 6 0 016 6h-6" strokeDasharray="1.6 1.6" />
+      </g>
+    ),
+  },
+  {
+    id: 'place-window',
+    label: 'Window',
+    shortcut: 'Shift+W',
+    hint: 'Point at a wall to place the window chosen on the right.',
+    icon: (
+      <g fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+        <rect x="3" y="4" width="12" height="10" rx="0.5" />
+        <path d="M9 4v10M3 9h12" />
       </g>
     ),
   },
@@ -157,7 +175,7 @@ export function Toolbar() {
 
       <Divider />
 
-      {tool === 'place-opening' && <OpeningPresetPicker />}
+      {isOpeningTool(tool) && <OpeningPresetPicker kind={OPENING_TOOLS[tool]} />}
       {tool === 'place-item' && <ArmedObject />}
 
       <ZoomControls />
@@ -180,14 +198,22 @@ export function Toolbar() {
  * opening fits the wall at all — a 100cm entrance door simply will not go on a
  * 90cm return.
  */
-function OpeningPresetPicker() {
-  const presetId = useEditorStore((state) => state.openingPresetId);
+function OpeningPresetPicker({ kind }: { kind: 'door' | 'window' }) {
+  const presetId = useEditorStore((state) =>
+    kind === 'window' ? state.windowPresetId : state.doorPresetId,
+  );
   const setPreset = useEditorStore((state) => state.setOpeningPreset);
+
+  // A doorway with no door in it is placed by the door tool: it is a hole you
+  // walk through, and that is the tool for holes you walk through.
+  const choices = OPENING_PRESETS.filter((preset) =>
+    kind === 'window' ? preset.kind === 'window' : preset.kind !== 'window',
+  );
 
   return (
     <select
       value={presetId}
-      aria-label="Opening type"
+      aria-label={kind === 'window' ? 'Window size' : 'Door size'}
       data-testid="opening-preset"
       onChange={(event) => setPreset(event.target.value)}
       className="h-8 rounded border px-2 text-xs"
@@ -197,7 +223,7 @@ function OpeningPresetPicker() {
         borderColor: 'var(--surface-border-strong)',
       }}
     >
-      {OPENING_PRESETS.map((preset) => (
+      {choices.map((preset) => (
         <option key={preset.id} value={preset.id}>
           {preset.label} — {preset.width / 10}cm
         </option>

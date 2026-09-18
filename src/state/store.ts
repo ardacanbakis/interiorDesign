@@ -34,7 +34,7 @@ import { type Mm } from '../core/units/length.ts';
 import { type NodeId, wallLength, type WallId } from '../core/graph/wallGraph.ts';
 import { clampOffset, fitsOnWall } from '../core/openings/geometry.ts';
 import { defaultPresetFor, openingFromPreset, presetById } from '../core/openings/defaults.ts';
-import { type Opening } from '../core/model/schema.ts';
+import { type Opening, type OpeningKind } from '../core/model/schema.ts';
 import { type LengthUnit } from '../core/units/length.ts';
 import {
   applyEdit,
@@ -66,7 +66,20 @@ export type SelectionMode = 'replace' | 'add' | 'toggle';
  * floor-plan editors end up with people accidentally dragging a wall across
  * the house while trying to click on it.
  */
-export type ToolId = 'select' | 'draw-room' | 'draw-wall' | 'place-opening' | 'place-item';
+export type ToolId =
+  'select' | 'draw-room' | 'draw-wall' | 'place-opening' | 'place-window' | 'place-item';
+
+/** The two opening tools, and which kind of preset each one places. */
+export const OPENING_TOOLS: Readonly<
+  Record<'place-opening' | 'place-window', Extract<OpeningKind, 'door' | 'window'>>
+> = {
+  'place-opening': 'door',
+  'place-window': 'window',
+};
+
+export function isOpeningTool(tool: ToolId): tool is 'place-opening' | 'place-window' {
+  return tool === 'place-opening' || tool === 'place-window';
+}
 
 export interface NewRoomSpec {
   /** Clear distance between wall faces. */
@@ -147,11 +160,24 @@ export interface EditorStore {
    */
   createRoom: (spec: NewRoomSpec) => void;
 
-  /** Which preset the opening tool will place next. */
-  openingPresetId: string;
+  /**
+   * Which size each opening tool will place next.
+   *
+   * One per tool rather than one shared, so switching from doors to windows
+   * and back does not lose the door size you had chosen. A doorway with no
+   * door counts as a door for this purpose: it is the door tool that places it.
+   */
+  doorPresetId: string;
+  windowPresetId: string;
+  /** Remember a preset for whichever tool places its kind. */
   setOpeningPreset: (presetId: string) => void;
-  /** Put an opening on a wall at a distance along it, and select it. */
-  addOpening: (wallId: WallId, offset: Mm) => void;
+  /**
+   * Put an opening on a wall at a distance along it, and select it.
+   *
+   * Without a preset, the active tool's own is used — a door from the door
+   * tool, a window from the window tool, a door from anywhere else.
+   */
+  addOpening: (wallId: WallId, offset: Mm, presetId?: string) => void;
   updateOpening: (openingId: OpeningId, changes: Partial<Opening>) => void;
   removeOpening: (openingId: OpeningId) => void;
 
@@ -217,7 +243,8 @@ function initialState(): Pick<
   | 'selection'
   | 'viewport'
   | 'tool'
-  | 'openingPresetId'
+  | 'doorPresetId'
+  | 'windowPresetId'
   | 'placeItemKind'
   | 'focusedIssueId'
 > {
@@ -230,7 +257,8 @@ function initialState(): Pick<
     selection: [],
     viewport: DEFAULT_VIEWPORT,
     tool: 'select',
-    openingPresetId: 'door-80',
+    doorPresetId: 'door-80',
+    windowPresetId: 'window-120',
     placeItemKind: null,
     focusedIssueId: null,
   };
@@ -365,15 +393,21 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     if (fresh) get().select([{ kind: 'room', id: fresh.id }]);
   },
 
-  setOpeningPreset: (presetId) => set({ openingPresetId: presetId }),
+  setOpeningPreset: (presetId) => {
+    const preset = presetById(presetId);
+    if (!preset) return;
+    if (preset.kind === 'window') set({ windowPresetId: presetId });
+    else set({ doorPresetId: presetId });
+  },
 
-  addOpening: (wallId, offset) => {
+  addOpening: (wallId, offset, presetId) => {
     const floorId = get().activeFloorId;
     const floor = get().document.floors.find((entry) => entry.id === floorId);
     const wall = floor?.graph.walls[wallId];
     if (!floor || !wall) return;
 
-    const preset = presetById(get().openingPresetId) ?? defaultPresetFor('door');
+    const preset =
+      presetById(presetId ?? activeOpeningPreset(get()).id) ?? defaultPresetFor('door');
     const length = wallLength(floor.graph, wall);
 
     // A door wider than the wall it is on is not a door. Better to refuse than
@@ -626,6 +660,13 @@ function pruneSelection(
 // ---------------------------------------------------------------------------
 // Selectors
 // ---------------------------------------------------------------------------
+
+/** The size the active opening tool would place. Doors when no such tool is up. */
+export function activeOpeningPreset(state: EditorStore) {
+  const id = state.tool === 'place-window' ? state.windowPresetId : state.doorPresetId;
+  const kind = isOpeningTool(state.tool) ? OPENING_TOOLS[state.tool] : 'door';
+  return presetById(id) ?? defaultPresetFor(kind);
+}
 
 /** The floor currently being edited. */
 export function activeFloor(state: EditorStore) {

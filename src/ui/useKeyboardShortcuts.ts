@@ -60,6 +60,12 @@ export function useKeyboardShortcuts(): void {
       // Modified keys past this point belong to the browser.
       if (meta || event.altKey) return;
 
+      // Shift+W: a window is the thing that goes in a wall, and W was taken.
+      if (event.shiftKey && event.key.toLowerCase() === 'w') {
+        store.setTool('place-window');
+        return;
+      }
+
       switch (event.key.toLowerCase()) {
         case 'v':
           store.setTool('select');
