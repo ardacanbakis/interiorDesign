@@ -88,13 +88,16 @@ test('every measurement of a placed object can be edited', async ({ page }) => {
   const at = await screenOf(page, { x: 1800, y: 400 });
   await page.mouse.click(at.x, at.y);
 
-  // Placing selects it, so the inspector is already showing it.
-  await expect(page.getByText('Wardrobe', { exact: true }).first()).toBeVisible();
+  // Placing selects it, so the inspector is already showing it. Scoped to that
+  // panel: the catalogue still has the wardrobe armed for the *next* one, and
+  // its size fields are named the same.
+  const inspector = page.getByRole('complementary', { name: 'Inspector' });
+  await expect(inspector.getByText('Wardrobe', { exact: true }).first()).toBeVisible();
 
-  await page.getByLabel('Width').fill('200');
-  await page.getByLabel('Width').press('Enter');
-  await page.getByLabel('Height').fill('240');
-  await page.getByLabel('Height').press('Enter');
+  await inspector.getByLabel('Width').fill('200');
+  await inspector.getByLabel('Width').press('Enter');
+  await inspector.getByLabel('Height').fill('240');
+  await inspector.getByLabel('Height').press('Enter');
   await page.getByTestId('item-param-doors').fill('4');
 
   const edited = (await items(page))[0]!;

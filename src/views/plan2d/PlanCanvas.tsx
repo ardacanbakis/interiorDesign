@@ -23,6 +23,7 @@ import {
   activeOpeningPreset,
   isOpeningTool,
   useEditorStore,
+  type ItemSize,
 } from '../../state/store.ts';
 import { roomDimensions, wallDimensions, type Dimension } from './dimensions.ts';
 import { DimensionsLayer } from './layers/DimensionsLayer.tsx';
@@ -105,6 +106,7 @@ export function PlanCanvas() {
   const addOpening = useEditorStore((state) => state.addOpening);
   const openingPreset = useEditorStore(activeOpeningPreset);
   const placeItemKind = useEditorStore((state) => state.placeItemKind);
+  const placeItemSize = useEditorStore((state) => state.placeItemSize);
   const addItem = useEditorStore((state) => state.addItem);
   const updateItem = useEditorStore((state) => state.updateItem);
 
@@ -165,8 +167,8 @@ export function PlanCanvas() {
   );
 
   const ghostTemplate = useMemo(
-    () => (tool === 'place-item' ? templateItem(placeItemKind) : null),
-    [tool, placeItemKind],
+    () => (tool === 'place-item' ? templateItem(placeItemKind, placeItemSize) : null),
+    [tool, placeItemKind, placeItemSize],
   );
   const itemGhost = useMemo(
     () => (ghostTemplate && ghostPose ? { ...ghostTemplate, ...ghostPose } : null),
@@ -394,7 +396,11 @@ export function PlanCanvas() {
 
     if (tool === 'place-item') {
       const placed = ghostTemplate ? placeAt(raw, ghostTemplate, event.altKey) : null;
-      if (placed) addItem(placed.item.kind, placed.item.x, placed.item.y, placed.item.rotation);
+      if (placed) {
+        const { kind, x, y, rotation, width, depth, height } = placed.item;
+        // The ghost's own size, so what lands is what was being previewed.
+        addItem(kind, x, y, rotation, { width, depth, height });
+      }
       return;
     }
 
@@ -832,7 +838,7 @@ const GHOST_SELECTION: ReadonlySet<string> = new Set(['ghost']);
  * Carries the catalogue defaults and nothing else: it is never committed, and
  * the real item is created from the kind when the click lands.
  */
-function templateItem(kind: string | null): Item | null {
+function templateItem(kind: string | null, size: ItemSize | null): Item | null {
   if (!kind) return null;
   try {
     const definition = getDefinition(kind);
@@ -843,9 +849,9 @@ function templateItem(kind: string | null): Item | null {
       x: 0,
       y: 0,
       rotation: 0,
-      width: definition.defaults.width,
-      depth: definition.defaults.depth,
-      height: definition.defaults.height,
+      width: size?.width ?? definition.defaults.width,
+      depth: size?.depth ?? definition.defaults.depth,
+      height: size?.height ?? definition.defaults.height,
       elevation: definition.defaults.elevation,
       mount: definition.defaults.mount,
       params: { ...definition.params },

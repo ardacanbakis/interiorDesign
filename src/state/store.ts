@@ -59,6 +59,13 @@ export type SelectionTarget =
 
 export type SelectionMode = 'replace' | 'add' | 'toggle';
 
+/** The three dimensions an object can be resized by before it is placed. */
+export interface ItemSize {
+  readonly width: Mm;
+  readonly depth: Mm;
+  readonly height: Mm;
+}
+
 /**
  * What a click on the canvas does.
  *
@@ -189,8 +196,17 @@ export interface EditorStore {
    */
   placeItemKind: string | null;
   setPlaceItemKind: (kind: string | null) => void;
-  /** Drop an object on the plan at its defaults, and select it. */
-  addItem: (kind: string, x: Mm, y: Mm, rotation?: number) => void;
+  /**
+   * The size the armed object will be placed at.
+   *
+   * Set from the catalogue's defaults when an object is armed, and editable
+   * before the click lands — because deciding a wardrobe is 2m wide *after*
+   * placing it means placing it twice.
+   */
+  placeItemSize: ItemSize | null;
+  setPlaceItemSize: (size: Partial<ItemSize>) => void;
+  /** Drop an object on the plan and select it. Sized as asked, or by default. */
+  addItem: (kind: string, x: Mm, y: Mm, rotation?: number, size?: ItemSize) => void;
   /**
    * Change an item. `coalesceKey` folds a drag into one undo step, so pressing
    * ctrl-Z once puts the wardrobe back where it started rather than walking it
@@ -254,6 +270,7 @@ function initialState(): Pick<
   | 'doorPresetId'
   | 'windowPresetId'
   | 'placeItemKind'
+  | 'placeItemSize'
   | 'focusedIssueId'
 > {
   const document = createDocument();
@@ -268,6 +285,7 @@ function initialState(): Pick<
     doorPresetId: 'door-80',
     windowPresetId: 'window-120',
     placeItemKind: null,
+    placeItemSize: null,
     focusedIssueId: null,
   };
 }
@@ -474,20 +492,48 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
 
   setPlaceItemKind: (kind) => {
     if (kind === null) {
-      set({ placeItemKind: null });
+      set({ placeItemKind: null, placeItemSize: null });
       return;
     }
-    // Choosing an object *is* choosing to place one; the tool follows.
-    set({ placeItemKind: kind, tool: 'place-item', selection: [] });
+
+    const definition = findDefinition(kind);
+    if (!definition) return;
+
+    // Choosing an object *is* choosing to place one; the tool follows. Its
+    // size starts at the catalogue's default and is editable from there.
+    set({
+      placeItemKind: kind,
+      placeItemSize: {
+        width: definition.defaults.width,
+        depth: definition.defaults.depth,
+        height: definition.defaults.height,
+      },
+      tool: 'place-item',
+      selection: [],
+    });
   },
 
-  addItem: (kind, x, y, rotation = 0) => {
+  setPlaceItemSize: (size) => {
+    const current = get().placeItemSize;
+    if (!current) return;
+
+    const next = { ...current, ...size };
+    set({
+      placeItemSize: {
+        width: Math.max(1, Math.round(next.width)),
+        depth: Math.max(1, Math.round(next.depth)),
+        height: Math.max(1, Math.round(next.height)),
+      },
+    });
+  },
+
+  addItem: (kind, x, y, rotation = 0, size) => {
     const floorId = get().activeFloorId;
     const floor = get().document.floors.find((entry) => entry.id === floorId);
     if (!floor || !findDefinition(kind)) return;
 
     const id = nextItemId(floor.items);
-    const item = createItem(kind, id, x, y, rotation);
+    const item = { ...createItem(kind, id, x, y, rotation), ...(size ?? {}) };
 
     get().commit(`Add ${item.label.toLowerCase()}`, (draft) => {
       draft.floors.find((entry) => entry.id === floorId)?.items.push(item);
@@ -623,7 +669,7 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     set(
       tool === 'place-item'
         ? { tool, selection: [] }
-        : { tool, selection: [], placeItemKind: null },
+        : { tool, selection: [], placeItemKind: null, placeItemSize: null },
     ),
 }));
 

@@ -5,6 +5,7 @@ import { CATEGORY_LABELS, type ItemDefinition } from '../core/catalog/types.ts';
 import { type RoomType } from '../core/graph/roomIdentity.ts';
 import { roomsOf } from '../core/model/derive.ts';
 import { activeFloor, useEditorStore } from '../state/store.ts';
+import { PlacementSize } from './PlacementSize.tsx';
 
 /**
  * The object catalogue.
@@ -69,6 +70,16 @@ export function CataloguePanel() {
         }}
       />
 
+      {armed && (
+        <>
+          <PlacementSize />
+          <p className="text-[10px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+            It turns to face away from whatever wall it lands against; hold Alt to place it free.
+            Escape puts it down.
+          </p>
+        </>
+      )}
+
       {roomType && grouped && (
         <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
           Ordered for a {roomType}. Everything else is still below.
@@ -99,13 +110,6 @@ export function CataloguePanel() {
         ))
       ) : (
         <List definitions={matches} armed={armed} onPick={arm} />
-      )}
-
-      {armed && (
-        <p className="mt-1 text-[10px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-          Click the plan to place it. It turns to face away from whatever wall it lands against;
-          hold Alt to place it free. Escape puts it down.
-        </p>
       )}
     </div>
   );

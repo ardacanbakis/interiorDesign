@@ -34,7 +34,7 @@ beforeEach(() => {
   // The store is a module singleton and `newDocument` deliberately leaves the
   // editor's own preferences alone — they are not document state. Tests do have
   // to reset them, or one that arms the catalogue leaks into the next.
-  useEditorStore.setState({ tool: 'select', placeItemKind: null });
+  useEditorStore.setState({ tool: 'select', placeItemKind: null, placeItemSize: null });
 });
 
 describe('store — starting state', () => {
@@ -513,5 +513,61 @@ describe('store — muting warnings', () => {
     store().muteIssue('a');
 
     expect(store().focusedIssueId).toBeNull();
+  });
+});
+
+describe('store — sizing an object before placing it', () => {
+  it('arms an object at the catalogue default size', () => {
+    store().setPlaceItemKind('wardrobe');
+
+    expect(store().placeItemSize).toEqual({ width: 1500, depth: 600, height: 2100 });
+  });
+
+  it('places at the size chosen, not the default', () => {
+    store().setPlaceItemKind('wardrobe');
+    store().setPlaceItemSize({ width: 2000 });
+    store().addItem('wardrobe', 0, 0, 0, store().placeItemSize!);
+
+    expect(store().document.floors[0]!.items[0]).toMatchObject({
+      width: 2000,
+      depth: 600,
+      height: 2100,
+    });
+  });
+
+  it('still places at the default when no size is given', () => {
+    store().addItem('wardrobe', 0, 0);
+
+    expect(store().document.floors[0]!.items[0]).toMatchObject({ width: 1500, depth: 600 });
+  });
+
+  it('rounds and refuses a size of nothing', () => {
+    store().setPlaceItemKind('wardrobe');
+    store().setPlaceItemSize({ width: 1234.6, depth: -5 });
+
+    expect(store().placeItemSize).toMatchObject({ width: 1235, depth: 1 });
+  });
+
+  it('starts afresh when a different object is armed', () => {
+    store().setPlaceItemKind('wardrobe');
+    store().setPlaceItemSize({ width: 2400 });
+    store().setPlaceItemKind('bed-double');
+
+    expect(store().placeItemSize).toEqual({ width: 1400, depth: 1900, height: 900 });
+  });
+
+  it('forgets the size when the tool is put down', () => {
+    store().setPlaceItemKind('wardrobe');
+    store().setTool('select');
+
+    expect(store().placeItemKind).toBeNull();
+    expect(store().placeItemSize).toBeNull();
+  });
+
+  it('ignores a kind the catalogue does not have', () => {
+    store().setPlaceItemKind('flying-carpet');
+
+    expect(store().placeItemKind).toBeNull();
+    expect(store().placeItemSize).toBeNull();
   });
 });
