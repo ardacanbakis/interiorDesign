@@ -15,6 +15,7 @@ import { graphFromSegments, rectangleSegments } from '../graph/wallGraph.ts';
 import { createFloor } from '../model/document.ts';
 import { reconcileFloor } from '../model/derive.ts';
 import { type Floor, type Item, type Opening } from '../model/schema.ts';
+import * as engine from './engine.ts';
 import { checkFloor, countBySeverity, issuesAbout, RULES } from './engine.ts';
 import { DEFAULT_THRESHOLDS, withThresholds } from './thresholds.ts';
 
@@ -436,5 +437,42 @@ describe('television viewing distance', () => {
     place('tv-wall', 2000, 40, 0, { elevation: 1150 });
 
     expect(ids('viewing')).toEqual([]);
+  });
+});
+
+describe('muting', () => {
+  it('leaves a muted warning out of the active list and puts it in the other', () => {
+    place('bed-double', 2000, 1400);
+    place('bedside-table', 2000 + 700 + 225, 1400 - 950 + 200, 0, { x: 2000 + 700 + 100 });
+
+    // Nudged into the bed, so its drawer has no room: a warning.
+    const all = check();
+    const warning = all.find((issue) => issue.severity === 'warning');
+    expect(warning).toBeDefined();
+
+    floor = { ...floor, mutedIssues: [warning!.id] };
+    const { activeIssues, mutedIssues } = engine;
+
+    expect(activeIssues(floor).map((issue) => issue.id)).not.toContain(warning!.id);
+    expect(mutedIssues(floor).map((issue) => issue.id)).toEqual([warning!.id]);
+  });
+
+  it('never lets an error be muted', () => {
+    // A door that cannot open is not something to agree to live with, and an
+    // id that was a warning when it was muted may be an error by now.
+    place('bed-double', 2000, 1500);
+    place('wardrobe', 2000, 1500);
+
+    const collision = check().find((issue) => issue.rule === 'overlap')!;
+    floor = { ...floor, mutedIssues: [collision.id] };
+
+    expect(engine.activeIssues(floor).map((issue) => issue.id)).toContain(collision.id);
+    expect(engine.mutedIssues(floor)).toEqual([]);
+  });
+
+  it('ignores a muted id that no longer matches anything', () => {
+    floor = { ...floor, mutedIssues: ['clearance/gone/gone'] };
+    expect(engine.activeIssues(floor)).toEqual([]);
+    expect(engine.mutedIssues(floor)).toEqual([]);
   });
 });

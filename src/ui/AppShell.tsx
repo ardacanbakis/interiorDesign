@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 
 import { floorArea, roomsOf } from '../core/model/derive.ts';
-import { countBySeverity, issuesOf } from '../core/rules/engine.ts';
+import { activeIssues, countBySeverity } from '../core/rules/engine.ts';
 import { formatArea } from '../core/units/length.ts';
 import { type SaveState } from '../persistence/autosave.ts';
 import { activeFloor, useEditorStore } from '../state/store.ts';
@@ -216,7 +216,7 @@ function LeftPanel() {
 function RightPanel() {
   const floor = useEditorStore(activeFloor);
   const focused = useEditorStore((state) => state.focusedIssueId);
-  const issues = floor ? issuesOf(floor) : [];
+  const issues = floor ? activeIssues(floor) : [];
   const { errors, warnings } = countBySeverity(issues);
 
   const [tab, setTab] = useState<'inspector' | 'issues'>('inspector');

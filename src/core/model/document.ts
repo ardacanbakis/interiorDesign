@@ -65,6 +65,7 @@ export function createFloor(
     items: [],
     floorOpenings: [],
     outdoorAreas: [],
+    mutedIssues: [],
   };
 }
 

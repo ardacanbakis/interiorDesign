@@ -15,7 +15,7 @@ import { drawRoomRect, drawWallRun, setWallLength } from '../../core/graph/opera
 import { getDefinition } from '../../core/catalog/registry.ts';
 import { type Item } from '../../core/model/schema.ts';
 import { roomsOf } from '../../core/model/derive.ts';
-import { issuesAbout, issuesOf } from '../../core/rules/engine.ts';
+import { activeIssues, issuesAbout } from '../../core/rules/engine.ts';
 import { applyGraphEdit } from '../../core/model/edits.ts';
 import { parseLength } from '../../core/units/length.ts';
 import {
@@ -146,7 +146,7 @@ export function PlanCanvas() {
    */
   const shownIssues = useMemo(() => {
     if (!floor) return [];
-    const all = issuesOf(floor);
+    const all = activeIssues(floor);
 
     const focused = all.filter((issue) => issue.id === focusedIssueId);
     const selected = selection.flatMap((target) => issuesAbout(all, target.kind, target.id));

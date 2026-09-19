@@ -26,7 +26,7 @@ import { type WallGraph } from '../graph/wallGraph.ts';
 import { ROOM_TYPES } from '../graph/roomIdentity.ts';
 
 /** Bumped whenever the shape changes. See `migrations.ts`. */
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 // ---------------------------------------------------------------------------
 // Primitives
@@ -189,6 +189,15 @@ export const FloorSchema = z.object({
   items: z.array(ItemSchema),
   floorOpenings: z.array(FloorOpeningSchema),
   outdoorAreas: z.array(OutdoorAreaSchema),
+  /**
+   * Warnings the user has looked at and decided to live with.
+   *
+   * Issue ids, which are stable across edits that do not change the issue.
+   * Kept on the plan rather than in the session because "I know the bedside
+   * table is near the door, that is where it goes" is a decision about this
+   * room, and it should still hold after a reload or on another device.
+   */
+  mutedIssues: z.array(z.string()),
 });
 
 // ---------------------------------------------------------------------------

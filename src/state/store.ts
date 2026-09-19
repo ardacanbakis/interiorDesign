@@ -209,6 +209,14 @@ export interface EditorStore {
    */
   focusedIssueId: string | null;
   focusIssue: (issueId: string | null) => void;
+  /**
+   * Put a warning aside, or bring it back.
+   *
+   * Document edits, and undoable: muting is a decision about the plan, and
+   * ctrl-Z after muting the wrong one is what anyone would reach for.
+   */
+  muteIssue: (issueId: string) => void;
+  unmuteIssue: (issueId: string) => void;
 
   // ---- Session actions ----
   setActiveFloor: (floorId: FloorId) => void;
@@ -551,6 +559,25 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
   },
 
   focusIssue: (issueId) => set({ focusedIssueId: issueId }),
+
+  muteIssue: (issueId) => {
+    const floorId = get().activeFloorId;
+    get().commit('Mute warning', (draft) => {
+      const target = draft.floors.find((entry) => entry.id === floorId);
+      if (!target || target.mutedIssues.includes(issueId)) return;
+      target.mutedIssues.push(issueId);
+    });
+    if (get().focusedIssueId === issueId) set({ focusedIssueId: null });
+  },
+
+  unmuteIssue: (issueId) => {
+    const floorId = get().activeFloorId;
+    get().commit('Unmute warning', (draft) => {
+      const target = draft.floors.find((entry) => entry.id === floorId);
+      if (!target) return;
+      target.mutedIssues = target.mutedIssues.filter((entry) => entry !== issueId);
+    });
+  },
 
   setActiveFloor: (floorId) => {
     if (!findFloor(get().document, floorId)) return;

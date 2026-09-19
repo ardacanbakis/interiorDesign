@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createDocument } from '../core/model/document.ts';
+import { CURRENT_SCHEMA_VERSION } from '../core/model/schema.ts';
 import { graphFromSegments, rectangleSegments } from '../core/graph/wallGraph.ts';
 import { FILE_EXTENSION, parseDocumentFile, serializeDocument, suggestFilename } from './file.ts';
 import { createMemoryStore, summarise } from './store.ts';
@@ -37,7 +38,7 @@ describe('serializeDocument / parseDocumentFile', () => {
   it('writes readable, version-stamped JSON', () => {
     const text = serializeDocument(sampleDocument());
 
-    expect(text).toContain('"schemaVersion": 1');
+    expect(text).toContain(`"schemaVersion": ${CURRENT_SCHEMA_VERSION}`);
     expect(text.split('\n').length).toBeGreaterThan(10);
     expect(text.endsWith('\n')).toBe(true);
   });

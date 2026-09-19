@@ -477,3 +477,41 @@ describe('store — naming an object', () => {
     ]);
   });
 });
+
+describe('store — muting warnings', () => {
+  it('records a muted warning on the plan, undoably', () => {
+    store().muteIssue('clearance/i1/bedside-drawer');
+
+    expect(store().document.floors[0]!.mutedIssues).toEqual(['clearance/i1/bedside-drawer']);
+    expect(store().undoLabel()).toBe('Mute warning');
+
+    // Muting the wrong one is exactly what ctrl-Z is for.
+    store().undo();
+    expect(store().document.floors[0]!.mutedIssues).toEqual([]);
+  });
+
+  it('does not record the same warning twice', () => {
+    store().muteIssue('a');
+    store().muteIssue('a');
+
+    expect(store().document.floors[0]!.mutedIssues).toEqual(['a']);
+    // And the second, having changed nothing, left no undo step behind.
+    store().undo();
+    expect(store().document.floors[0]!.mutedIssues).toEqual([]);
+  });
+
+  it('brings a warning back', () => {
+    store().muteIssue('a');
+    store().muteIssue('b');
+    store().unmuteIssue('a');
+
+    expect(store().document.floors[0]!.mutedIssues).toEqual(['b']);
+  });
+
+  it('stops pointing at a warning the moment it is put aside', () => {
+    store().focusIssue('a');
+    store().muteIssue('a');
+
+    expect(store().focusedIssueId).toBeNull();
+  });
+});

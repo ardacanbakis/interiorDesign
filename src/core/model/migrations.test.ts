@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createDocument, createFloor, defaultFloorName } from './document.ts';
-import { loadDocument, type Migration } from './migrations.ts';
+import { loadDocument, MIGRATIONS, type Migration } from './migrations.ts';
 import { CURRENT_SCHEMA_VERSION } from './schema.ts';
 
 const fixedClock = () => new Date('2026-01-15T09:30:00.000Z');
@@ -116,9 +116,8 @@ describe('loadDocument — rejecting what it cannot read', () => {
 });
 
 describe('loadDocument — migration machinery', () => {
-  // Version 1 is the first, so there is nothing real to migrate yet. These
-  // exercise the mechanism with stand-in migrations, because the day it is
-  // needed is the day it must already be right.
+  // Stand-in migrations, so the mechanism is tested on its own terms rather
+  // than through whatever the real ones happen to do this month.
   const renameHouse: Migration = {
     from: 1,
     to: 2,
@@ -144,16 +143,20 @@ describe('loadDocument — migration machinery', () => {
     });
 
     const legacy = { ...stableDocument(), schemaVersion: 1 };
-    loadDocument({ ...legacy, schemaVersion: 1 }, [record(renameHouse), record(addField)]);
+    loadDocument(legacy, [record(renameHouse), record(addField)]);
 
-    // Only runs as far as the current version; there is no version 3 to reach.
-    expect(applied).toEqual([]);
+    // Runs as far as the current version and no further: the step to 3 is
+    // there, but there is no version 3 to reach.
+    expect(CURRENT_SCHEMA_VERSION).toBe(2);
+    expect(applied).toEqual(['test: prefix the name']);
   });
 
   it('stops when no migration bridges the gap, and says so', () => {
     const result = loadDocument({ ...stableDocument(), schemaVersion: 1 }, []);
-    // Already current, so nothing to bridge.
-    expect(result.ok).toBe(true);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/no way to upgrade/i);
   });
 
   it('runs a migration when the document really is behind', () => {
@@ -169,16 +172,55 @@ describe('loadDocument — migration machinery', () => {
     const legacy = { ...stableDocument(), schemaVersion: CURRENT_SCHEMA_VERSION - 1 };
     const result = loadDocument(legacy, [upgradeToCurrent]);
 
-    if (CURRENT_SCHEMA_VERSION === 1) {
-      // Version 0 is rejected outright as having no usable version number.
-      expect(result.ok).toBe(false);
-      return;
-    }
-
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.document.name).toBe('upgraded');
     expect(result.migrated).toBe(true);
+  });
+});
+
+describe('loadDocument — the real migrations', () => {
+  it('brings a version-1 plan up to date', () => {
+    // A file written before floors carried muted warnings: the field is simply
+    // absent. This is a plan somebody actually saved, and it has to open.
+    const current = JSON.parse(JSON.stringify(stableDocument())) as Record<string, unknown>;
+    const floors = (current['floors'] as Record<string, unknown>[]).map((floor) => {
+      const { mutedIssues: _dropped, ...rest } = floor;
+      void _dropped;
+      return rest;
+    });
+    const legacy = { ...current, floors, schemaVersion: 1 };
+
+    const result = loadDocument(legacy, MIGRATIONS);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.migrated).toBe(true);
+    expect(result.document.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(result.document.floors.map((floor) => floor.mutedIssues)).toEqual([[]]);
+  });
+
+  it('leaves a version-1 plan that already has the field alone', () => {
+    // Belt and braces: a migration must never overwrite what is there.
+    const current = JSON.parse(JSON.stringify(stableDocument())) as Record<string, unknown>;
+    const floors = (current['floors'] as Record<string, unknown>[]).map((floor) => ({
+      ...floor,
+      mutedIssues: ['clearance/i1/wardrobe-swing'],
+    }));
+
+    const result = loadDocument({ ...current, floors, schemaVersion: 1 }, MIGRATIONS);
+
+    expect(result.ok && result.document.floors[0]!.mutedIssues).toEqual([
+      'clearance/i1/wardrobe-swing',
+    ]);
+  });
+
+  it('every migration steps exactly one version, and they run in sequence', () => {
+    MIGRATIONS.forEach((migration, index) => {
+      expect(migration.to).toBe(migration.from + 1);
+      expect(migration.from).toBe(1 + index);
+    });
+    expect(MIGRATIONS.at(-1)?.to).toBe(CURRENT_SCHEMA_VERSION);
   });
 });
 

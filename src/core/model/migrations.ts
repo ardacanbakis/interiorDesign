@@ -30,11 +30,30 @@ export interface Migration {
 /**
  * Every migration, in order.
  *
- * Empty because version 1 is the first: there is nothing older to upgrade yet.
- * The machinery is here and tested regardless, because the moment it is needed
- * is the moment there are real documents that cannot afford it to be wrong.
+ * Each one reads the version it names and writes the next. They are applied in
+ * sequence, so a very old file walks up through every step; none of them may
+ * assume anything about the document beyond what its own `from` version
+ * guarantees.
  */
-export const MIGRATIONS: readonly Migration[] = [];
+export const MIGRATIONS: readonly Migration[] = [
+  {
+    from: 1,
+    to: 2,
+    description: 'Floors gain a list of muted warnings.',
+    migrate: (document) => ({
+      ...document,
+      floors: asArray(document['floors']).map((floor) =>
+        typeof floor === 'object' && floor !== null
+          ? { mutedIssues: [], ...(floor as Record<string, unknown>) }
+          : floor,
+      ),
+    }),
+  },
+];
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
 
 export type LoadResult =
   | { readonly ok: true; readonly document: HouseDocument; readonly migrated: boolean }

@@ -97,6 +97,24 @@ export function issuesOf(floor: Floor): Issue[] {
   return issues;
 }
 
+/**
+ * The issues still worth showing: everything the user has not muted.
+ *
+ * Errors cannot be muted, so a muted id that has since become an error is
+ * shown regardless — a door that cannot open is not something to have agreed
+ * to live with.
+ */
+export function activeIssues(floor: Floor): Issue[] {
+  const muted = new Set(floor.mutedIssues);
+  return issuesOf(floor).filter((issue) => issue.severity === 'error' || !muted.has(issue.id));
+}
+
+/** The warnings the user has put aside, so they can be brought back. */
+export function mutedIssues(floor: Floor): Issue[] {
+  const muted = new Set(floor.mutedIssues);
+  return issuesOf(floor).filter((issue) => issue.severity !== 'error' && muted.has(issue.id));
+}
+
 /** How many of each severity, for the panel's header. */
 export function countBySeverity(issues: readonly Issue[]): { errors: number; warnings: number } {
   return {
