@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 
 import {
   formatLength,
@@ -48,6 +48,12 @@ export function LengthInput({
   const [draft, setDraft] = useState<string | null>(null);
   const [lastValue, setLastValue] = useState(value);
 
+  // Escape has to out-run its own blur. Clearing the draft is a state update,
+  // and `blur()` fires `onBlur` — and therefore `commit` — before React has
+  // re-rendered, so `commit` would still see the abandoned text and save it.
+  // A ref is read immediately, which is the point.
+  const abandoned = useRef(false);
+
   // Follow the model while not being typed into — a wall dragged on the canvas
   // has to update the number in the panel. Adjusted during render rather than
   // in an effect: React handles a setState here without an extra commit, so the
@@ -63,6 +69,11 @@ export function LengthInput({
   const outOfRange = parsed !== null && (parsed < min || parsed > max);
 
   const commit = () => {
+    if (abandoned.current) {
+      abandoned.current = false;
+      setDraft(null);
+      return;
+    }
     if (draft === null) return;
 
     const next = parseLength(draft, unit);
@@ -93,10 +104,16 @@ export function LengthInput({
             // must not also be steering the plan.
             event.stopPropagation();
             if (event.key === 'Enter') {
+              // Enter here means "I have finished this number", not "submit the
+              // form". Left to the browser it would do both — and the submit
+              // would read the value from before this commit, quietly creating
+              // a room the size the field used to say.
+              event.preventDefault();
               commit();
               event.currentTarget.blur();
             }
             if (event.key === 'Escape') {
+              abandoned.current = true;
               setDraft(null);
               event.currentTarget.blur();
             }

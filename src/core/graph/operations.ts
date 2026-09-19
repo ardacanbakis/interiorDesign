@@ -139,12 +139,16 @@ export function drawWallRun(
   graph: WallGraph,
   points: readonly Vec2[],
   kind: WallKind = 'interior',
+  thickness?: Mm,
 ): OperationResult {
   let working = graph;
   const splits: WallSplit[] = [];
 
   for (let index = 0; index < points.length - 1; index++) {
-    const result = insertWall(working, points[index]!, points[index + 1]!, { kind });
+    const result = insertWall(working, points[index]!, points[index + 1]!, {
+      kind,
+      ...(thickness === undefined ? {} : { thickness }),
+    });
     working = result.graph;
     splits.push(...result.splits);
   }
@@ -224,4 +228,157 @@ export function moveWallSideways(graph: WallGraph, wallId: WallId, offset: Mm): 
 export function nodesOf(graph: WallGraph, wallId: WallId): { a: NodeId; b: NodeId } {
   const wall = getWall(graph, wallId);
   return { a: wall.a, b: wall.b };
+}
+
+// ---------------------------------------------------------------------------
+// L-shaped rooms
+// ---------------------------------------------------------------------------
+
+/** Which corner of the overall rectangle the room is missing. */
+export type NotchCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+export interface LRoomSpec extends RoomSizeSpec {
+  /** Width of the missing corner, measured between wall faces like the rest. */
+  readonly notchWidth: Mm;
+  readonly notchDepth: Mm;
+  readonly notchCorner: NotchCorner;
+}
+
+/**
+ * The narrowest arm an L is allowed to have.
+ *
+ * Not a rule about architecture, just about arithmetic: an arm thinner than
+ * this produces walls that overlap their own neighbours, and a graph that
+ * describes a shape nobody asked for. The panel refuses it before it gets here.
+ */
+export const MIN_ARM: Mm = 200;
+
+export function isValidLRoom(spec: LRoomSpec): boolean {
+  return (
+    spec.width > 0 &&
+    spec.depth > 0 &&
+    spec.notchWidth > 0 &&
+    spec.notchDepth > 0 &&
+    spec.width - spec.notchWidth >= MIN_ARM &&
+    spec.depth - spec.notchDepth >= MIN_ARM
+  );
+}
+
+/**
+ * Build an L-shaped room from the measurements someone actually took.
+ *
+ * The same promise the rectangle makes, on a harder shape: every number typed
+ * is a distance between wall *faces*, so a 5m × 4m room with a 2m × 1.5m corner
+ * taken out of it has exactly those five measurements when the tape comes out
+ * again. Rooms with a chimney breast, a stair bulkhead or a bathroom cut into
+ * the corner are ordinary, and a planner that only does rectangles cannot
+ * describe most real houses.
+ *
+ * ## Why the coordinates are derived rather than computed
+ *
+ * The graph stores centrelines, so every face measurement has to be pushed out
+ * by half a wall. At an odd thickness — 135mm is an ordinary brick-and-plaster
+ * wall — half is 67.5, and rounding each corner independently pushes each of
+ * them outwards by its own half-millimetre, which shows up as a room 1mm wider
+ * than the one that was asked for.
+ *
+ * So exactly two numbers are rounded, the top-left centrelines, and every other
+ * coordinate is derived from them by adding whole millimetres. The absolute
+ * position can then sit half a millimetre off the origin — which nobody can
+ * measure and nothing depends on — while every *span* is exact, which is the
+ * thing the tape measure will check.
+ */
+export function createLShapedRoom(graph: WallGraph, spec: LRoomSpec): OperationResult {
+  if (!isValidLRoom(spec)) return { graph, splits: [] };
+
+  const origin = spec.origin ?? { x: 0, y: 0 };
+  const thickness = spec.thickness;
+  const half = thickness / 2;
+
+  // The only two rounded values. Everything below is one of these plus an
+  // integer, so no span can drift.
+  const left = roundMm(origin.x - half);
+  const top = roundMm(origin.y - half);
+
+  const right = left + spec.width + thickness;
+  const bottom = top + spec.depth + thickness;
+
+  // The two walls that form the notch. Which side of its face each one's
+  // centreline falls on depends on which corner is missing, so each case
+  // spells out its own.
+  const ring = notchRing(spec, { left, top, right, bottom, thickness });
+
+  // Closed by repeating the first point: `drawWallRun` walks pairs, so the
+  // last pair is the wall back to the start.
+  return drawWallRun(graph, [...ring, ring[0]!], spec.kind ?? 'exterior', thickness);
+}
+
+interface Frame {
+  readonly left: Mm;
+  readonly top: Mm;
+  readonly right: Mm;
+  readonly bottom: Mm;
+  readonly thickness: Mm;
+}
+
+/** The centreline ring, clockwise on screen, for each missing corner. */
+function notchRing(spec: LRoomSpec, frame: Frame): Vec2[] {
+  const { left, top, right, bottom, thickness } = frame;
+  const { width, depth, notchWidth, notchDepth } = spec;
+
+  switch (spec.notchCorner) {
+    case 'top-right': {
+      // The notch's vertical wall keeps the room on its left, so its centreline
+      // sits a full wall in from the right-hand side.
+      const vertical = left + (width - notchWidth) + thickness;
+      const horizontal = top + notchDepth;
+      return [
+        { x: left, y: top },
+        { x: vertical, y: top },
+        { x: vertical, y: horizontal },
+        { x: right, y: horizontal },
+        { x: right, y: bottom },
+        { x: left, y: bottom },
+      ];
+    }
+
+    case 'top-left': {
+      const vertical = left + notchWidth;
+      const horizontal = top + notchDepth;
+      return [
+        { x: vertical, y: top },
+        { x: right, y: top },
+        { x: right, y: bottom },
+        { x: left, y: bottom },
+        { x: left, y: horizontal },
+        { x: vertical, y: horizontal },
+      ];
+    }
+
+    case 'bottom-right': {
+      const vertical = left + (width - notchWidth) + thickness;
+      const horizontal = top + (depth - notchDepth) + thickness;
+      return [
+        { x: left, y: top },
+        { x: right, y: top },
+        { x: right, y: horizontal },
+        { x: vertical, y: horizontal },
+        { x: vertical, y: bottom },
+        { x: left, y: bottom },
+      ];
+    }
+
+    case 'bottom-left': {
+      const vertical = left + notchWidth;
+      const horizontal = top + (depth - notchDepth) + thickness;
+      return [
+        { x: left, y: top },
+        { x: right, y: top },
+        { x: right, y: bottom },
+        { x: vertical, y: bottom },
+        { x: vertical, y: horizontal },
+        { x: left, y: horizontal },
+      ];
+    }
+  }
 }

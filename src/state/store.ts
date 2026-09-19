@@ -26,7 +26,11 @@ import {
   type OpeningId,
 } from '../core/model/schema.ts';
 import { type RoomId, type RoomType } from '../core/graph/roomIdentity.ts';
-import { createRoomFromInnerSize } from '../core/graph/operations.ts';
+import {
+  createLShapedRoom,
+  createRoomFromInnerSize,
+  type NotchCorner,
+} from '../core/graph/operations.ts';
 import { createItem, findDefinition } from '../core/catalog/registry.ts';
 import { allNodes } from '../core/graph/wallGraph.ts';
 import { boundingBox } from '../core/geometry/polygon.ts';
@@ -96,6 +100,18 @@ export interface NewRoomSpec {
   readonly ceilingHeight: Mm;
   readonly name: string;
   readonly type: RoomType;
+  /**
+   * The corner to leave out, for an L-shaped room.
+   *
+   * Absent means a plain rectangle. Real houses are full of rooms with a
+   * chimney breast or a stair bulkhead taking a corner, and a planner that
+   * only does rectangles cannot describe most of them.
+   */
+  readonly notch?: {
+    readonly width: Mm;
+    readonly depth: Mm;
+    readonly corner: NotchCorner;
+  };
 }
 
 /**
@@ -382,17 +398,26 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
         ? { x: 0, y: 0 }
         : { x: boundingBox(existingNodes).maxX + NEW_ROOM_GAP, y: 0 };
 
+    const shape = {
+      width: spec.width,
+      depth: spec.depth,
+      thickness: spec.thickness,
+      kind: 'exterior' as const,
+      origin,
+    };
+
     // Through `applyGraphEdit` so that if the new room's walls happen to meet
     // something already drawn, any openings on what gets split move with it.
     const edited = applyGraphEdit(
       floor,
-      createRoomFromInnerSize(floor.graph, {
-        width: spec.width,
-        depth: spec.depth,
-        thickness: spec.thickness,
-        kind: 'exterior',
-        origin,
-      }),
+      spec.notch
+        ? createLShapedRoom(floor.graph, {
+            ...shape,
+            notchWidth: spec.notch.width,
+            notchDepth: spec.notch.depth,
+            notchCorner: spec.notch.corner,
+          })
+        : createRoomFromInnerSize(floor.graph, shape),
     ).floor;
     const graph = edited.graph;
 

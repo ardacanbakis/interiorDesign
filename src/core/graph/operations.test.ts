@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { boundingBox } from '../geometry/polygon.ts';
+import { boundingBox, containsPoint } from '../geometry/polygon.ts';
 import { normalize, perpendicular, sub, vec2 } from '../geometry/vec2.ts';
 import { extractFaces } from './faces.ts';
 import {
+  createLShapedRoom,
   createRoomFromInnerSize,
   drawRoomRect,
   drawWallRun,
@@ -353,5 +354,99 @@ describe('moveWallSideways', () => {
 
     expect(wallLength(moved, getWall(moved, 'w1'))).toBe(1000);
     expect(nodePoint(moved, getWall(moved, 'w1').a)).toEqual({ x: 0, y: 300 });
+  });
+});
+
+describe('createLShapedRoom', () => {
+  /** The usable floor of the one room the graph describes. */
+  function floorOf(graph: WallGraph) {
+    const faces = extractFaces(graph);
+    const inner = faces.filter((face) => face.area > 0);
+    expect(inner).toHaveLength(1);
+    return roomGeometry(graph, inner[0]!);
+  }
+
+  const base = {
+    width: 5000,
+    depth: 4000,
+    notchWidth: 2000,
+    notchDepth: 1500,
+    thickness: 100,
+  } as const;
+
+  it.each(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const)(
+    'gives exactly the typed floor area with the notch at %s',
+    (notchCorner) => {
+      // The whole point of typing measurements: 5m x 4m less a 2m x 1.5m
+      // corner is 17 m², and it has to be 17 m² however the corner is turned.
+      const { graph } = createLShapedRoom(EMPTY_GRAPH, { ...base, notchCorner });
+
+      expect(floorOf(graph).area).toBe(5000 * 4000 - 2000 * 1500);
+    },
+  );
+
+  it('is exact at an odd wall thickness, where half a wall is not a whole number', () => {
+    // 135mm is an ordinary brick-and-plaster wall. Rounding each corner on its
+    // own would put the room 1mm out; the spans have to survive it.
+    const { graph } = createLShapedRoom(EMPTY_GRAPH, {
+      ...base,
+      thickness: 135,
+      notchCorner: 'top-right',
+    });
+
+    expect(floorOf(graph).area).toBe(5000 * 4000 - 2000 * 1500);
+  });
+
+  it('puts the missing corner where it was asked for', () => {
+    const { graph } = createLShapedRoom(EMPTY_GRAPH, { ...base, notchCorner: 'top-right' });
+    const { outline } = floorOf(graph);
+
+    const xs = outline.map((point) => point.x);
+    const ys = outline.map((point) => point.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+
+    // The overall footprint is still the full rectangle...
+    expect(Math.max(...xs) - minX).toBeCloseTo(5000, 6);
+    expect(Math.max(...ys) - minY).toBeCloseTo(4000, 6);
+
+    // ...and the top-right corner is the one that is not part of the floor.
+    expect(containsPoint(outline, { x: minX + 4500, y: minY + 500 })).toBe(false);
+    expect(containsPoint(outline, { x: minX + 500, y: minY + 500 })).toBe(true);
+    expect(containsPoint(outline, { x: minX + 4500, y: minY + 3500 })).toBe(true);
+  });
+
+  it('draws six walls, not four', () => {
+    const { graph } = createLShapedRoom(EMPTY_GRAPH, { ...base, notchCorner: 'bottom-left' });
+
+    expect(allWalls(graph)).toHaveLength(6);
+  });
+
+  it('refuses a notch that would leave no room behind it', () => {
+    for (const bad of [
+      { ...base, notchWidth: 5000 },
+      { ...base, notchDepth: 4000 },
+      { ...base, notchWidth: 4900 },
+      { ...base, notchWidth: 0 },
+      { ...base, notchDepth: -100 },
+    ]) {
+      const { graph } = createLShapedRoom(EMPTY_GRAPH, { ...bad, notchCorner: 'top-right' });
+      expect(allWalls(graph)).toHaveLength(0);
+    }
+  });
+
+  it('agrees with the rectangle when the notch is the smallest allowed', () => {
+    // A sanity check that the two paths describe the same world: an L whose
+    // notch is a sliver still measures its full width and depth overall.
+    const { graph } = createLShapedRoom(EMPTY_GRAPH, {
+      width: 3000,
+      depth: 3000,
+      notchWidth: 200,
+      notchDepth: 200,
+      thickness: 100,
+      notchCorner: 'bottom-right',
+    });
+
+    expect(floorOf(graph).area).toBe(3000 * 3000 - 200 * 200);
   });
 });
