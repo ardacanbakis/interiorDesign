@@ -72,6 +72,23 @@
   --plan-item-fill: oklch(95% 0.022 75);
   --plan-item-fill-selected: oklch(93% 0.05 75);
   --plan-item-ink: var(--color-shell-700);
+
+  /* The 3D view. Materials rather than objects: one colour per kind of
+     surface, shaded by which way it faces. `--scene-shadow` is what every
+     colour is mixed towards as a face turns away from the light. */
+  --scene-sky: oklch(94.5% 0.008 240);
+  --scene-shadow: oklch(32% 0.02 250);
+  --scene-ground: oklch(88% 0.012 140);
+  --scene-wall: oklch(95% 0.004 80);
+  --scene-floor: oklch(82% 0.035 65);
+  --scene-door: oklch(88% 0.03 70);
+  --scene-sill: oklch(93% 0.006 80);
+  --scene-carcass: oklch(84% 0.04 70);
+  --scene-soft: oklch(80% 0.045 25);
+  --scene-surface: oklch(76% 0.055 55);
+  --scene-metal: oklch(82% 0.008 250);
+  --scene-glass: oklch(88% 0.055 215);
+  --scene-appliance: oklch(90% 0.006 250);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -97,6 +114,20 @@
     --plan-item-fill: oklch(27% 0.022 75);
     --plan-item-fill-selected: oklch(32% 0.045 75);
     --plan-item-ink: var(--color-shell-300);
+
+    --scene-sky: oklch(21% 0.012 250);
+    --scene-shadow: oklch(12% 0.01 250);
+    --scene-ground: oklch(27% 0.012 140);
+    --scene-wall: oklch(72% 0.005 80);
+    --scene-floor: oklch(56% 0.04 65);
+    --scene-door: oklch(62% 0.035 70);
+    --scene-sill: oklch(68% 0.006 80);
+    --scene-carcass: oklch(58% 0.045 70);
+    --scene-soft: oklch(56% 0.05 25);
+    --scene-surface: oklch(52% 0.06 55);
+    --scene-metal: oklch(60% 0.008 250);
+    --scene-glass: oklch(66% 0.06 215);
+    --scene-appliance: oklch(66% 0.006 250);
   }
 }
 
@@ -126,6 +157,20 @@
   --plan-item-fill: oklch(27% 0.022 75);
   --plan-item-fill-selected: oklch(32% 0.045 75);
   --plan-item-ink: var(--color-shell-300);
+
+  --scene-sky: oklch(21% 0.012 250);
+  --scene-shadow: oklch(12% 0.01 250);
+  --scene-ground: oklch(27% 0.012 140);
+  --scene-wall: oklch(72% 0.005 80);
+  --scene-floor: oklch(56% 0.04 65);
+  --scene-door: oklch(62% 0.035 70);
+  --scene-sill: oklch(68% 0.006 80);
+  --scene-carcass: oklch(58% 0.045 70);
+  --scene-soft: oklch(56% 0.05 25);
+  --scene-surface: oklch(52% 0.06 55);
+  --scene-metal: oklch(60% 0.008 250);
+  --scene-glass: oklch(66% 0.06 215);
+  --scene-appliance: oklch(66% 0.006 250);
 }
 
 /* --------------------------------------------------------------------------- */

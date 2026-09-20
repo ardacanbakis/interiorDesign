@@ -2,9 +2,21 @@ import { useEffect } from 'react';
 
 import { boundingBox } from '../core/geometry/polygon.ts';
 import { allNodes, removeWall } from '../core/graph/wallGraph.ts';
+import { frame } from '../core/scene/camera.ts';
+import { planBounds } from '../core/scene/build.ts';
 import { downloadDocument } from '../persistence/file.ts';
 import { fitTo } from '../views/plan2d/viewport.ts';
-import { useEditorStore } from '../state/store.ts';
+import { useEditorStore, type ToolId } from '../state/store.ts';
+
+/**
+ * A nominal canvas, for the shortcuts that frame the view.
+ *
+ * The keyboard has no element to measure. Both framing functions take the
+ * narrower of the two fields of view, so for any landscape window the answer is
+ * the same whatever the exact pixels — and the buttons, which do know their
+ * size, use the real one.
+ */
+const NOMINAL_CANVAS = { width: 1000, height: 700 };
 
 /**
  * Global keyboard shortcuts.
@@ -60,33 +72,53 @@ export function useKeyboardShortcuts(): void {
       // Modified keys past this point belong to the browser.
       if (meta || event.altKey) return;
 
+      // Reaching for a tool is a request to go and draw, so it brings the plan
+      // back — the same thing clicking the tool does. See `Toolbar`.
+      const pickTool = (tool: ToolId) => {
+        store.setTool(tool);
+        if (store.view === 'scene') store.setView('plan');
+      };
+
       // Shift+W: a window is the thing that goes in a wall, and W was taken.
       if (event.shiftKey && event.key.toLowerCase() === 'w') {
-        store.setTool('place-window');
+        pickTool('place-window');
         return;
       }
 
       switch (event.key.toLowerCase()) {
+        case '2':
+          store.setView('plan');
+          break;
+        case '3':
+          store.setView('scene');
+          break;
         case 'v':
-          store.setTool('select');
+          pickTool('select');
           break;
         case 'r':
-          store.setTool('draw-room');
+          pickTool('draw-room');
           break;
         case 'w':
-          store.setTool('draw-wall');
+          pickTool('draw-wall');
           break;
         case 'd':
-          store.setTool('place-opening');
+          pickTool('place-opening');
           break;
         case 'f': {
           const floor = store.document.floors.find((entry) => entry.id === store.activeFloorId);
           if (!floor) break;
+
+          if (store.view === 'scene') {
+            const bounds = planBounds(floor);
+            if (bounds) {
+              store.setCamera(frame(bounds, floor.ceilingHeight, NOMINAL_CANVAS, store.camera));
+            }
+            break;
+          }
+
           const points = allNodes(floor.graph).map((node) => ({ x: node.x, y: node.y }));
           if (points.length === 0) break;
-          store.setViewport(
-            fitTo(boundingBox(points), { width: 1000, height: 700 }, { padding: 64 }),
-          );
+          store.setViewport(fitTo(boundingBox(points), NOMINAL_CANVAS, { padding: 64 }));
           break;
         }
         case 'delete':

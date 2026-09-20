@@ -6,6 +6,7 @@ import { formatArea } from '../core/units/length.ts';
 import { type SaveState } from '../persistence/autosave.ts';
 import { activeFloor, useEditorStore } from '../state/store.ts';
 import { PlanCanvas } from '../views/plan2d/PlanCanvas.tsx';
+import { SceneCanvas } from '../views/scene3d/SceneCanvas.tsx';
 import { CataloguePanel } from './CataloguePanel.tsx';
 import { Inspector } from './Inspector.tsx';
 import { IssuesPanel } from './IssuesPanel.tsx';
@@ -45,7 +46,7 @@ export function AppShell({
         <LeftPanel />
 
         <main className="relative min-w-0 flex-1">
-          <PlanCanvas />
+          <Stage />
         </main>
 
         <RightPanel />
@@ -54,6 +55,19 @@ export function AppShell({
       <StatusBar saveState={saveState} restoring={restoring} />
     </div>
   );
+}
+
+/**
+ * The plan, or the same plan in three dimensions.
+ *
+ * Unmounted rather than hidden when it is not showing: the 3D view listens to
+ * the camera and rebuilds its scene from the floor, and a view doing that
+ * behind another one is work nobody asked for. The camera lives in the store,
+ * so coming back lands where you left off.
+ */
+function Stage() {
+  const view = useEditorStore((state) => state.view);
+  return view === 'scene' ? <SceneCanvas /> : <PlanCanvas />;
 }
 
 /**

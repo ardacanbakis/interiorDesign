@@ -20,6 +20,9 @@ everyday objects whose every dimension is editable, and find out what will actua
 - **Clearance checking** — live warnings when a door swing is blocked, a wardrobe has no room
   to open, a sofa covers a radiator, or a window is blocked by something taller than its sill.
   Click a warning and the offending space lights up on the plan.
+- **A 3D view of the same plan** — orbit the room, watch the doors stand open, and click anything
+  to select the same object the plan has selected. Walls between you and the room are taken away
+  so you can see in, and put back with one button.
 
 ## Architecture in one paragraph
 
@@ -91,6 +94,15 @@ Vite · React 19 · TypeScript (strict, including `noUncheckedIndexedAccess` and
 The 2D plan is **plain SVG**, not a canvas library: it stays crisp at any zoom, gives pointer
 hit-testing and accessible text for free, and serialises straight to PNG and PDF for export.
 
+The 3D view is SVG too, and there is no 3D library in the dependency list. `src/core/scene/`
+turns a floor into prisms — walls split into piers and lintels around their openings, furniture
+from the catalogue's own boxes — and projects them through an orbit camera with back-face
+culling, near-plane clipping and a painter's sort. That is a deliberate trade: the hard part of
+this view is knowing where a wall is once the doors have been cut out of it, and keeping the
+renderer as arithmetic means the whole path from "wardrobe at 30°" to the polygons on screen is
+pure functions with tests on every step. A prettier renderer can be dropped in later without any
+of that moving.
+
 ## Build plan
 
 - [x] **M0** — Scaffold and toolchain
@@ -100,7 +112,7 @@ hit-testing and accessible text for free, and serialises straight to PNG and PDF
 - [ ] **M3b** — Multi-floor and stairs _(parked — single-room work comes first)_
 - [x] **M4** — Openings, and an object catalogue of 54 everyday things
 - [x] **M5** — Clearance and ergonomics engine
-- [ ] **M6** — 3D view
+- [x] **M6** — 3D view: orbit camera, cutaway walls, selection shared with the plan
 - [ ] **M7** — First-person walkthrough
 - [ ] **M8** — Layout variants
 - [ ] **M9** — Export and measuring checklists

@@ -11,6 +11,7 @@ import {
   OPENING_TOOLS,
   useEditorStore,
   type ToolId,
+  type ViewId,
 } from '../state/store.ts';
 import { FileMenu } from './FileMenu.tsx';
 import { Tooltip } from './Tooltip.tsx';
@@ -94,6 +95,8 @@ const TOOLS: readonly ToolDefinition[] = [
 export function Toolbar() {
   const tool = useEditorStore((state) => state.tool);
   const setTool = useEditorStore((state) => state.setTool);
+  const view = useEditorStore((state) => state.view);
+  const setView = useEditorStore((state) => state.setView);
   const undo = useEditorStore((state) => state.undo);
   const redo = useEditorStore((state) => state.redo);
   const canUndo = useEditorStore((state) => state.history.past.length > 0);
@@ -101,7 +104,18 @@ export function Toolbar() {
   const undoLabel = useEditorStore((state) => state.history.past.at(-1)?.label ?? null);
   const redoLabel = useEditorStore((state) => state.history.future.at(-1)?.label ?? null);
 
-  const activeHint = TOOLS.find((entry) => entry.id === tool)?.hint;
+  const activeHint =
+    view === 'scene'
+      ? 'Drag to turn the room, shift-drag to pan, scroll to zoom. Click anything to select it.'
+      : TOOLS.find((entry) => entry.id === tool)?.hint;
+
+  // Reaching for a drawing tool while in 3D is a request to go and draw. The
+  // alternative — a tool that lights up and then does nothing when you click —
+  // is the sort of thing that makes people stop trusting a toolbar.
+  const pickTool = (id: ToolId) => {
+    setTool(id);
+    if (view === 'scene') setView('plan');
+  };
 
   return (
     <header
@@ -117,14 +131,18 @@ export function Toolbar() {
 
       <Divider />
 
+      <ViewSwitch view={view} onChange={setView} />
+
+      <Divider />
+
       <div role="toolbar" aria-label="Drawing tools" className="flex items-center gap-1">
         {TOOLS.map((entry) => (
           <ToolButton
             key={entry.id}
-            active={tool === entry.id}
+            active={view === 'plan' && tool === entry.id}
             label={entry.label}
             shortcut={entry.shortcut}
-            onClick={() => setTool(entry.id)}
+            onClick={() => pickTool(entry.id)}
             testId={`tool-${entry.id}`}
           >
             {entry.icon}
@@ -175,10 +193,10 @@ export function Toolbar() {
 
       <Divider />
 
-      {isOpeningTool(tool) && <OpeningPresetPicker kind={OPENING_TOOLS[tool]} />}
-      {tool === 'place-item' && <ArmedObject />}
+      {view === 'plan' && isOpeningTool(tool) && <OpeningPresetPicker kind={OPENING_TOOLS[tool]} />}
+      {view === 'plan' && tool === 'place-item' && <ArmedObject />}
 
-      <ZoomControls />
+      {view === 'plan' && <ZoomControls />}
 
       <p
         className="ml-auto hidden truncate pl-4 text-xs lg:block"
@@ -187,6 +205,49 @@ export function Toolbar() {
         {activeHint}
       </p>
     </header>
+  );
+}
+
+/**
+ * Plan or 3D.
+ *
+ * Two ways of looking at one document, so a switch rather than a tool: nothing
+ * about the plan changes when you press it. It sits ahead of the drawing tools
+ * because it decides what those tools are pointed at.
+ */
+function ViewSwitch({ view, onChange }: { view: ViewId; onChange: (view: ViewId) => void }) {
+  const options: { id: ViewId; label: string; shortcut: string }[] = [
+    { id: 'plan', label: 'Plan', shortcut: '2' },
+    { id: 'scene', label: '3D', shortcut: '3' },
+  ];
+
+  return (
+    <div
+      role="group"
+      aria-label="View"
+      className="flex items-center gap-0.5 rounded p-0.5"
+      style={{ background: 'var(--surface-app)' }}
+    >
+      {options.map((option) => (
+        <Tooltip key={option.id} label={`${option.label} view`} shortcut={option.shortcut}>
+          <button
+            type="button"
+            onClick={() => onChange(option.id)}
+            aria-pressed={view === option.id}
+            aria-label={`${option.label} view`}
+            data-testid={`view-${option.id}`}
+            className="h-7 rounded px-2.5 text-xs font-medium transition-colors"
+            style={{
+              background: view === option.id ? 'var(--surface-raised)' : 'transparent',
+              color: view === option.id ? 'var(--text-primary)' : 'var(--text-muted)',
+              boxShadow: view === option.id ? '0 1px 2px rgb(0 0 0 / 0.08)' : 'none',
+            }}
+          >
+            {option.label}
+          </button>
+        </Tooltip>
+      ))}
+    </div>
   );
 }
 

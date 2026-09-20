@@ -32,6 +32,7 @@ import {
   type NotchCorner,
 } from '../core/graph/operations.ts';
 import { createItem, findDefinition } from '../core/catalog/registry.ts';
+import { DEFAULT_CAMERA, type OrbitCamera } from '../core/scene/camera.ts';
 import { allNodes } from '../core/graph/wallGraph.ts';
 import { boundingBox } from '../core/geometry/polygon.ts';
 import { type Mm } from '../core/units/length.ts';
@@ -133,6 +134,16 @@ const NEW_ROOM_GAP: Mm = 1000;
  */
 const DUPLICATE_OFFSET: Mm = 300;
 
+/**
+ * Which way the plan is being looked at.
+ *
+ * Two views of one document, never two documents. Everything the 3D view draws
+ * is derived from the same floor the plan draws, so switching is a change of
+ * camera rather than a change of model — and an edit made in one is already an
+ * edit in the other.
+ */
+export type ViewId = 'plan' | 'scene';
+
 export interface Viewport {
   /** Model coordinates at the centre of the view. */
   readonly centre: { readonly x: number; readonly y: number };
@@ -158,6 +169,21 @@ export interface EditorStore {
   selection: readonly SelectionTarget[];
   viewport: Viewport;
   tool: ToolId;
+
+  /** Plan or 3D. Session state — nobody undoes a change of viewpoint. */
+  view: ViewId;
+  setView: (view: ViewId) => void;
+  /** Where the 3D camera is. Kept here so switching away and back returns to it. */
+  camera: OrbitCamera;
+  setCamera: (camera: OrbitCamera) => void;
+  /**
+   * Whether the walls between you and the room are taken away in 3D.
+   *
+   * On by default, because a room drawn honestly is a closed box and the first
+   * thing an honest 3D view shows you is the outside of it.
+   */
+  cutaway: boolean;
+  setCutaway: (cutaway: boolean) => void;
 
   // ---- Document actions ----
   commit: (label: string, recipe: (draft: HouseDocument) => void, options?: EditOptions) => void;
@@ -283,6 +309,9 @@ function initialState(): Pick<
   | 'selection'
   | 'viewport'
   | 'tool'
+  | 'view'
+  | 'camera'
+  | 'cutaway'
   | 'doorPresetId'
   | 'windowPresetId'
   | 'placeItemKind'
@@ -298,6 +327,9 @@ function initialState(): Pick<
     selection: [],
     viewport: DEFAULT_VIEWPORT,
     tool: 'select',
+    view: 'plan',
+    camera: DEFAULT_CAMERA,
+    cutaway: true,
     doorPresetId: 'door-80',
     windowPresetId: 'window-120',
     placeItemKind: null,
@@ -365,6 +397,9 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
       activeFloorId: document.floors[0]?.id ?? '',
       selection: [],
       viewport: DEFAULT_VIEWPORT,
+      // A camera framed on the last plan would be pointing into empty space in
+      // this one. Both views start over together.
+      camera: DEFAULT_CAMERA,
     });
   },
 
@@ -684,6 +719,19 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     get().selection.some((entry) => entry.kind === target.kind && entry.id === target.id),
 
   setViewport: (viewport) => set({ viewport }),
+
+  // Nothing is drawn in 3D — it is somewhere to look at the room, not another
+  // place to build it. Arriving with the wall tool still up, or with a wardrobe
+  // in hand, would promise something the view cannot deliver.
+  setView: (view) =>
+    set(
+      view === 'scene'
+        ? { view, tool: 'select', placeItemKind: null, placeItemSize: null }
+        : { view },
+    ),
+
+  setCamera: (camera) => set({ camera }),
+  setCutaway: (cutaway) => set({ cutaway }),
 
   // Switching tools drops the selection: the inspector for a wall is not
   // relevant while a room is being drawn, and a stale selection makes Delete
