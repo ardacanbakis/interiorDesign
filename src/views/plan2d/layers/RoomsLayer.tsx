@@ -17,11 +17,14 @@ export const RoomsLayer = memo(function RoomsLayer({
   viewport,
   selectedRoomIds,
   onSelectRoom,
+  onGrabRoom,
 }: {
   rooms: readonly DerivedRoom[];
   viewport: Viewport;
   selectedRoomIds: ReadonlySet<string>;
   onSelectRoom?: (roomId: string, additive: boolean) => void;
+  /** Start dragging the room across the plan. */
+  onGrabRoom?: (roomId: string, event: React.PointerEvent<SVGPathElement>) => void;
 }) {
   return (
     <g>
@@ -48,12 +51,13 @@ export const RoomsLayer = memo(function RoomsLayer({
             strokeWidth={selected ? screenPixels(viewport, 2) : 0}
             data-testid={`room-${room.props.id}`}
             data-room-name={room.props.name}
-            style={{ cursor: onSelectRoom ? 'pointer' : 'default' }}
+            style={{ cursor: onGrabRoom ? 'move' : onSelectRoom ? 'pointer' : 'default' }}
             onPointerDown={
-              onSelectRoom
+              onSelectRoom || onGrabRoom
                 ? (event) => {
                     event.stopPropagation();
-                    onSelectRoom(room.props.id, event.shiftKey);
+                    onSelectRoom?.(room.props.id, event.shiftKey);
+                    onGrabRoom?.(room.props.id, event);
                   }
                 : undefined
             }

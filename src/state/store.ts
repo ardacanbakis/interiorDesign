@@ -16,6 +16,7 @@
 import { create } from 'zustand';
 
 import { reconcileFloor } from '../core/model/derive.ts';
+import { moveRoomBy } from '../core/model/moveRoom.ts';
 import { applyGraphEdit } from '../core/model/edits.ts';
 import { createDocument, findFloor } from '../core/model/document.ts';
 import {
@@ -208,6 +209,18 @@ export interface EditorStore {
    * `createRoomFromInnerSize`.
    */
   createRoom: (spec: NewRoomSpec) => void;
+
+  /**
+   * Slide a room across the plan, with everything standing in it.
+   *
+   * `coalesceKey` folds a drag into one undo step, the same way dragging an
+   * object does — otherwise ctrl-Z walks the room home a nudge at a time.
+   */
+  moveRoom: (
+    roomId: RoomId,
+    delta: { readonly x: Mm; readonly y: Mm },
+    coalesceKey?: string,
+  ) => void;
 
   /**
    * Which size each opening tool will place next.
@@ -477,6 +490,32 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     });
 
     if (fresh) get().select([{ kind: 'room', id: fresh.id }]);
+  },
+
+  moveRoom: (roomId, delta, coalesceKey) => {
+    const floorId = get().activeFloorId;
+    const floor = get().document.floors.find((entry) => entry.id === floorId);
+    if (!floor) return;
+
+    // Worked out against the committed state rather than inside the recipe:
+    // the move has to read the derived faces to know what travels with the
+    // room, and deriving those from a draft would mean re-deriving them on
+    // every nudge of a drag.
+    const moved = moveRoomBy(floor, roomId, delta);
+    if (moved === floor) return;
+
+    get().commit(
+      'Move room',
+      (draft) => {
+        const target = draft.floors.find((entry) => entry.id === floorId);
+        if (!target) return;
+
+        target.graph = moved.graph;
+        target.rooms = moved.rooms;
+        target.items = moved.items;
+      },
+      coalesceKey === undefined ? {} : { coalesceKey },
+    );
   },
 
   setOpeningPreset: (presetId) => {

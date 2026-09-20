@@ -412,6 +412,11 @@ function RoomInspector({ floor, roomId }: { floor: Floor; roomId: string }) {
         Measured inside the walls, so these are the numbers a tape measure gives. To change them,
         select a wall and set its length.
       </p>
+
+      <p className="text-[10px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+        Drag the floor to move the room and everything in it. Anything joined to it comes too; hold
+        alt to ignore the grid.
+      </p>
     </Section>
   );
 }

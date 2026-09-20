@@ -4,6 +4,7 @@ import { vec2 } from '../geometry/vec2.ts';
 import {
   allNodes,
   allWalls,
+  connectedNodes,
   createIdAllocator,
   DEFAULT_WALL_THICKNESS,
   EMPTY_GRAPH,
@@ -465,6 +466,40 @@ describe('queries', () => {
     const corner = allNodes(graph)[0]!;
     expect(incidentWalls(graph, corner.id)).toHaveLength(2);
     expect(nodeDegree(graph, corner.id)).toBe(2);
+  });
+});
+
+describe('connectedNodes', () => {
+  it('walks a whole rectangle from any one of its corners', () => {
+    const graph = graphFromSegments(rectangleSegments(0, 0, 4000, 3000));
+    const start = allNodes(graph)[0]!;
+
+    expect(connectedNodes(graph, start.id).size).toBe(4);
+  });
+
+  it('stops at the edge of the structure', () => {
+    // Two rectangles that do not touch. Picking up one must not pick up the
+    // other, which is the whole point of asking.
+    const graph = graphFromSegments([
+      ...rectangleSegments(0, 0, 4000, 3000),
+      ...rectangleSegments(10_000, 0, 3000, 3000),
+    ]);
+
+    expect(allNodes(graph)).toHaveLength(8);
+    expect(connectedNodes(graph, allNodes(graph)[0]!.id).size).toBe(4);
+  });
+
+  it('crosses a shared wall, because two joined rooms are one structure', () => {
+    const graph = graphFromSegments([
+      ...rectangleSegments(0, 0, 4000, 6000),
+      { from: [0, 3000], to: [4000, 3000] },
+    ]);
+
+    expect(connectedNodes(graph, allNodes(graph)[0]!.id).size).toBe(allNodes(graph).length);
+  });
+
+  it('returns nothing for a node that is not there', () => {
+    expect(connectedNodes(EMPTY_GRAPH, 'missing').size).toBe(0);
   });
 });
 

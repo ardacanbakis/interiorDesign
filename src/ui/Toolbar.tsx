@@ -30,7 +30,7 @@ const TOOLS: readonly ToolDefinition[] = [
     id: 'select',
     label: 'Select',
     shortcut: 'V',
-    hint: 'Click a wall or room. Drag a corner to move it.',
+    hint: 'Click to select. Drag a room to move it, or a corner to reshape it.',
     icon: <path d="M4 3l9 7-4 .6L11 15l-2 .8-2-4.4L4 14z" fill="currentColor" />,
   },
   {

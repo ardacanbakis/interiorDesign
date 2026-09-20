@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { boundingBox } from '../../core/geometry/polygon.ts';
-import { type Vec2 } from '../../core/geometry/vec2.ts';
+import { roundVec2, type Vec2 } from '../../core/geometry/vec2.ts';
 import {
   allNodes,
   findWallAt,
@@ -74,6 +74,23 @@ type Interaction =
       /** Where inside the item it was grabbed, so it does not jump to centre. */
       readonly grabOffset: Vec2;
       readonly moved: boolean;
+    }
+  | {
+      readonly kind: 'drag-room';
+      readonly roomId: string;
+      readonly pointerId: number;
+      /** Where the drag began, in model coordinates. */
+      readonly start: Vec2;
+      /**
+       * How far the room has been moved so far.
+       *
+       * A room is moved by a *step*, not to a position — it has no position of
+       * its own, only the walls it is made of. Remembering the total already
+       * applied means each step is the difference from it, so a drag never
+       * accumulates the rounding of its own increments.
+       */
+      readonly applied: Vec2;
+      readonly moved: boolean;
     };
 
 /** Where an opening would land if the pointer were clicked right now. */
@@ -109,6 +126,7 @@ export function PlanCanvas() {
   const placeItemSize = useEditorStore((state) => state.placeItemSize);
   const addItem = useEditorStore((state) => state.addItem);
   const updateItem = useEditorStore((state) => state.updateItem);
+  const moveRoom = useEditorStore((state) => state.moveRoom);
 
   const [interaction, setInteraction] = useState<Interaction>({ kind: 'idle' });
   const [snap, setSnap] = useState<Snap | null>(null);
@@ -461,6 +479,24 @@ export function PlanCanvas() {
       return;
     }
 
+    if (interaction.kind === 'drag-room') {
+      const wanted = roomDragStep(
+        interaction.start,
+        raw,
+        gridSpacing(viewport).minor,
+        event.altKey,
+      );
+      const step = { x: wanted.x - interaction.applied.x, y: wanted.y - interaction.applied.y };
+
+      // Below the grid step the drag has not yet reached the next stop, so
+      // there is nothing to commit and nothing to record on the undo stack.
+      if (step.x === 0 && step.y === 0) return;
+
+      moveRoom(interaction.roomId, step, `drag-room:${interaction.roomId}`);
+      setInteraction({ ...interaction, applied: wanted, moved: true });
+      return;
+    }
+
     if (interaction.kind === 'drag-item') {
       const item = floor?.items.find((entry) => entry.id === interaction.itemId);
       if (!item) return;
@@ -517,7 +553,11 @@ export function PlanCanvas() {
       return;
     }
 
-    if (interaction.kind === 'pan' || interaction.kind === 'drag-node') {
+    if (
+      interaction.kind === 'pan' ||
+      interaction.kind === 'drag-node' ||
+      interaction.kind === 'drag-room'
+    ) {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
@@ -674,6 +714,21 @@ export function PlanCanvas() {
               ? {
                   onSelectRoom: (roomId: string, additive: boolean) =>
                     select([{ kind: 'room', id: roomId }], additive ? 'add' : 'replace'),
+                  onGrabRoom: (roomId: string, event: React.PointerEvent<SVGPathElement>) => {
+                    // The layer's own capture would send the rest of the drag
+                    // to a path that is about to move out from under the
+                    // pointer; the canvas holds it instead.
+                    (event.currentTarget as SVGElement).releasePointerCapture?.(event.pointerId);
+                    setInteraction({
+                      kind: 'drag-room',
+                      roomId,
+                      pointerId: event.pointerId,
+                      start: pointerToModel(event),
+                      applied: { x: 0, y: 0 },
+                      moved: false,
+                    });
+                    container.current?.setPointerCapture(event.pointerId);
+                  },
                 }
               : {})}
           />
@@ -818,6 +873,27 @@ export function PlanCanvas() {
 
 function lastPoint(points: readonly Vec2[]): Vec2 | null {
   return points[points.length - 1] ?? null;
+}
+
+/**
+ * How far a room should have moved, for a pointer that started here and is now
+ * there.
+ *
+ * Snapped as a **distance**, not as a position. A room's corners sit wherever
+ * its walls put them — half a wall thickness off every round number — so
+ * snapping the room itself onto the grid would shift it by 50mm the moment you
+ * touched it. Snapping the step instead keeps whatever alignment the room
+ * already had and moves it by whole grid squares, which is what a nudge should
+ * do. Holding alt turns it off for the times it is in the way.
+ */
+function roomDragStep(start: Vec2, current: Vec2, grid: number, snapsOff: boolean): Vec2 {
+  const raw = { x: current.x - start.x, y: current.y - start.y };
+  if (snapsOff || grid <= 0) return roundVec2(raw);
+
+  return {
+    x: Math.round(raw.x / grid) * grid,
+    y: Math.round(raw.y / grid) * grid,
+  };
 }
 
 /** The pointer decides only these three numbers about a ghost. */

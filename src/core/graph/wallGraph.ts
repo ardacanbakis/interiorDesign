@@ -165,6 +165,38 @@ export function nodeDegree(graph: WallGraph, nodeId: NodeId): number {
   return incidentWalls(graph, nodeId).length;
 }
 
+/**
+ * Every node reachable from one, walking along walls.
+ *
+ * What makes it possible to move a room: a room is a face, but the thing that
+ * can actually be picked up and put down somewhere else is the whole structure
+ * the face belongs to. Two rooms sharing a wall are one such structure, and
+ * moving one of them without the other would mean stretching the wall between
+ * them — which is a different operation, and one that already has a handle on
+ * it.
+ */
+export function connectedNodes(graph: WallGraph, start: NodeId): Set<NodeId> {
+  const seen = new Set<NodeId>();
+  if (!graph.nodes[start]) return seen;
+
+  const walls = allWalls(graph);
+  const pending: NodeId[] = [start];
+  seen.add(start);
+
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+
+    for (const wall of walls) {
+      const other = wall.a === current ? wall.b : wall.b === current ? wall.a : null;
+      if (other === null || seen.has(other)) continue;
+      seen.add(other);
+      pending.push(other);
+    }
+  }
+
+  return seen;
+}
+
 /** The wall joining two nodes, in either direction, if there is one. */
 export function findWallBetween(graph: WallGraph, a: NodeId, b: NodeId): GraphWall | null {
   return (
