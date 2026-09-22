@@ -28,19 +28,20 @@
  * its wall, so moving the wall moves the opening — which is exactly why it is
  * stored that way.
  *
- * ## What does not happen
+ * ## Landing it
  *
- * The graph is translated, not rebuilt, so a room pushed up against another one
- * ends up with its wall lying on top of the neighbour's rather than merging
- * into a single shared wall. That is the same thing dragging a corner does, and
- * joining two structures into one is a larger operation than moving one: it has
- * to re-planarise the graph, which hands out new wall ids and would take the
- * doors off the walls they are in.
+ * Moving is a translation and nothing more — it does not re-planarise the
+ * graph, so a room slid against its neighbour is left with its wall lying on
+ * top of theirs rather than sharing one. That is deliberate: rearranging wall
+ * ids on every pointer move would churn the whole plan while nothing is
+ * settled. Putting it right is `weld.ts`, which the editor runs once, when the
+ * room is dropped. {@link alignRoomStep} is what makes the drop land where it
+ * has to for there to be anything to weld.
  */
 
 import { containsPoint } from '../geometry/polygon.ts';
 import { type Vec2 } from '../geometry/vec2.ts';
-import { roundMm } from '../units/length.ts';
+import { roundMm, type Mm } from '../units/length.ts';
 import { connectedNodes, type NodeId } from '../graph/wallGraph.ts';
 import { type RoomId } from '../graph/roomIdentity.ts';
 import { roomsOf, type DerivedRoom } from './derive.ts';
@@ -118,6 +119,117 @@ export function moveRoomBy(floor: Floor, roomId: RoomId, delta: Vec2): Floor {
       movedItems.has(item.id) ? { ...item, x: item.x + step.x, y: item.y + step.y } : item,
     ),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Landing it in the right place
+// ---------------------------------------------------------------------------
+
+/** A line the plan locked onto, drawn while the drag is in progress. */
+export interface MoveGuide {
+  readonly from: Vec2;
+  readonly to: Vec2;
+}
+
+export interface RoomSnap {
+  /** The step to actually take, adjusted from the one asked for. */
+  readonly step: Vec2;
+  readonly guides: readonly MoveGuide[];
+}
+
+/**
+ * Nudge a step so the structure lands in line with what is already there.
+ *
+ * Without this, joining two rooms would mean landing a drag on the exact
+ * millimetre, which nobody can do with a pointer — and being a millimetre out
+ * is the difference between a shared wall and two walls almost touching, which
+ * looks identical and is not the same building.
+ *
+ * The two axes are snapped independently, and against the **coordinates** of
+ * the corners rather than the corners themselves. On a rectilinear plan a
+ * corner's x is its wall's centreline, so lining up an x lines up a whole wall
+ * — which means rooms of different sizes, whose corners will never meet, still
+ * snap edge to edge.
+ *
+ * The step is measured from where the structure is now, not from where the drag
+ * began, so the caller can keep asking and the answer stays honest as the room
+ * moves.
+ */
+export function alignRoomStep(floor: Floor, move: RoomMove, step: Vec2, tolerance: Mm): RoomSnap {
+  const moving: Vec2[] = [];
+  const still: Vec2[] = [];
+
+  for (const node of Object.values(floor.graph.nodes)) {
+    (move.nodeIds.has(node.id) ? moving : still).push({ x: node.x, y: node.y });
+  }
+
+  // Nothing to line up against — the first room on an empty plan.
+  if (moving.length === 0 || still.length === 0) return { step, guides: [] };
+
+  const x = nearestAlignment(
+    moving.map((point) => point.x),
+    still.map((point) => point.x),
+    step.x,
+    tolerance,
+  );
+  const y = nearestAlignment(
+    moving.map((point) => point.y),
+    still.map((point) => point.y),
+    step.y,
+    tolerance,
+  );
+
+  const snapped = { x: x?.step ?? step.x, y: y?.step ?? step.y };
+
+  // Guides run across everything in play, so the line reads as "these are in
+  // line with each other" rather than as an edge of something.
+  const ys = [...moving.map((point) => point.y + snapped.y), ...still.map((point) => point.y)];
+  const xs = [...moving.map((point) => point.x + snapped.x), ...still.map((point) => point.x)];
+
+  const guides: MoveGuide[] = [];
+  if (x) {
+    guides.push({
+      from: { x: x.at, y: Math.min(...ys) },
+      to: { x: x.at, y: Math.max(...ys) },
+    });
+  }
+  if (y) {
+    guides.push({
+      from: { x: Math.min(...xs), y: y.at },
+      to: { x: Math.max(...xs), y: y.at },
+    });
+  }
+
+  return { step: snapped, guides };
+}
+
+/**
+ * The step nearest the one wanted that puts some moving coordinate exactly on
+ * some stationary one, or nothing if none is close enough.
+ */
+function nearestAlignment(
+  moving: readonly number[],
+  still: readonly number[],
+  wanted: number,
+  tolerance: Mm,
+): { step: number; at: number } | null {
+  let best: { step: number; at: number } | null = null;
+  let bestError = tolerance;
+
+  for (const target of new Set(still)) {
+    for (const source of new Set(moving)) {
+      const step = target - source;
+      const error = Math.abs(step - wanted);
+      // `<=` so that a later candidate at the same distance wins, which keeps
+      // the choice stable as the pointer crosses the midpoint between two.
+      if (error <= bestError) {
+        bestError = error;
+        best = { step, at: target };
+      }
+    }
+  }
+
+  return best;
 }
 
 /**

@@ -15,6 +15,7 @@
 import { clampOffset } from './geometry.ts';
 import { type Opening } from '../model/schema.ts';
 import { type WallSplit } from '../graph/wallGraph.ts';
+import { type WallMerge } from '../graph/weld.ts';
 import { type Mm } from '../units/length.ts';
 
 export interface RehomeResult {
@@ -73,6 +74,61 @@ export function rehomeOpenings(
       if (offset !== Math.round(rawOffset)) moved.add(opening.id);
 
       return [{ ...opening, wallId, offset }];
+    });
+  }
+
+  return {
+    openings: working,
+    moved: [...moved].filter((id) => !dropped.has(id)),
+    dropped: [...dropped],
+  };
+}
+
+/**
+ * Move openings onto the wall that survived a merge.
+ *
+ * When two rooms are pushed together their facing walls become one, and
+ * whichever of the two is left standing has to take the other's doors and
+ * windows with it. That is not just a change of id: everything about an
+ * opening is measured from its wall's `a` end, so if the survivor runs the
+ * opposite way then the distance along it, the end the hinge is at, and the
+ * side the leaf swings towards all have to turn round together. Change the
+ * distance and forget the other two and the door ends up hinged on the wrong
+ * side, opening into the room next door.
+ */
+export function rehomeMerged(
+  openings: readonly Opening[],
+  merges: readonly WallMerge[],
+): RehomeResult {
+  if (merges.length === 0) {
+    return { openings, moved: [], dropped: [] };
+  }
+
+  let working = [...openings];
+  const moved = new Set<string>();
+  const dropped = new Set<string>();
+
+  for (const merge of merges) {
+    working = working.flatMap((opening) => {
+      if (opening.wallId !== merge.fromWallId) return [opening];
+
+      if (opening.width > merge.length) {
+        dropped.add(opening.id);
+        return [];
+      }
+
+      const raw = merge.reversed ? merge.length - opening.offset : opening.offset;
+      const offset = clampOffset(merge.length, opening.width, raw);
+      if (offset !== Math.round(raw)) moved.add(opening.id);
+
+      const turned: Partial<Opening> = merge.reversed
+        ? {
+            hinge: opening.hinge === 'a' ? 'b' : 'a',
+            side: opening.side === 'left' ? 'right' : 'left',
+          }
+        : {};
+
+      return [{ ...opening, ...turned, wallId: merge.toWallId, offset }];
     });
   }
 

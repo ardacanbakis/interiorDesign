@@ -7,8 +7,9 @@
  * instead, and the splits cannot be dropped by forgetting to look at them.
  */
 
-import { rehomeOpenings, type RehomeResult } from '../openings/rehome.ts';
+import { rehomeMerged, rehomeOpenings, type RehomeResult } from '../openings/rehome.ts';
 import { type OperationResult } from '../graph/operations.ts';
+import { type WeldResult } from '../graph/weld.ts';
 import { type Floor } from './schema.ts';
 
 export interface FloorEditResult {
@@ -41,6 +42,32 @@ export function applyGraphEdit(floor: Floor, result: OperationResult): FloorEdit
     },
     moved: rehomed.moved,
     dropped: rehomed.dropped,
+  };
+}
+
+/**
+ * Put a weld onto a floor, carrying its openings with it.
+ *
+ * Two sets of records, applied in the order they happened: the cuts that turned
+ * partial overlaps into exact ones, then the merges that collapsed each exact
+ * overlap into one wall. Applying them the other way round would look for a
+ * door on a wall that the cut had already replaced.
+ */
+export function applyWeld(floor: Floor, result: WeldResult): FloorEditResult {
+  if (result.graph === floor.graph && result.splits.length === 0 && result.merges.length === 0) {
+    return { floor, moved: [], dropped: [] };
+  }
+
+  const cut = rehomeOpenings(floor.openings, result.splits);
+  const merged = rehomeMerged(cut.openings, result.merges);
+
+  const dropped = [...new Set([...cut.dropped, ...merged.dropped])];
+  const moved = [...new Set([...cut.moved, ...merged.moved])].filter((id) => !dropped.includes(id));
+
+  return {
+    floor: { ...floor, graph: result.graph, openings: [...merged.openings] },
+    moved,
+    dropped,
   };
 }
 

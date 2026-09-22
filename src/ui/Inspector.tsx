@@ -12,6 +12,7 @@ import {
 } from '../core/graph/wallGraph.ts';
 import { maxOpeningWidth } from '../core/openings/geometry.ts';
 import { roomsOf } from '../core/model/derive.ts';
+import { sharesWall } from '../core/model/separateRoom.ts';
 import { type Floor } from '../core/model/schema.ts';
 import { formatArea, formatLength } from '../core/units/length.ts';
 import { activeFloor, useEditorStore } from '../state/store.ts';
@@ -331,9 +332,12 @@ function Toggle({
 function RoomInspector({ floor, roomId }: { floor: Floor; roomId: string }) {
   const commit = useEditorStore((state) => state.commit);
   const unit = useEditorStore((state) => state.document.unit);
+  const detach = useEditorStore((state) => state.separateRoom);
 
   const room = roomsOf(floor).find((entry) => entry.props.id === roomId);
   if (!room) return <Empty>That room is no longer there.</Empty>;
+
+  const joined = sharesWall(floor, roomId);
 
   const setProps = (label: string, change: (props: { name: string; type: RoomType }) => void) => {
     commit(label, (draft) => {
@@ -414,9 +418,22 @@ function RoomInspector({ floor, roomId }: { floor: Floor; roomId: string }) {
       </p>
 
       <p className="text-[10px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-        Drag the floor to move the room and everything in it. Anything joined to it comes too; hold
-        alt to ignore the grid.
+        {joined
+          ? 'This room shares a wall with its neighbour, so dragging either moves both.'
+          : 'Drag the floor to move the room and everything in it. Push it against another room and the two join; hold alt to ignore the grid.'}
       </p>
+
+      {joined && (
+        <button
+          type="button"
+          data-testid="separate-room"
+          onClick={() => detach(roomId)}
+          className="w-full rounded border border-dashed py-1.5 text-[11px]"
+          style={{ borderColor: 'var(--surface-border-strong)', color: 'var(--text-secondary)' }}
+        >
+          Separate from the others
+        </button>
+      )}
     </Section>
   );
 }

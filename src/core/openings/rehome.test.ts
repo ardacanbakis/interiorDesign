@@ -11,7 +11,8 @@ import {
 } from '../graph/wallGraph.ts';
 import { type Opening } from '../model/schema.ts';
 import { openingFrame } from './geometry.ts';
-import { rehomeOpenings } from './rehome.ts';
+import { rehomeMerged, rehomeOpenings } from './rehome.ts';
+import { type WallMerge } from '../graph/weld.ts';
 
 function door(overrides: Partial<Opening> = {}): Opening {
   return {
@@ -193,5 +194,62 @@ describe('rehomeOpenings', () => {
       width: 900,
       height: 2050,
     });
+  });
+});
+
+describe('rehomeMerged', () => {
+  function merge(overrides: Partial<WallMerge> = {}): WallMerge {
+    return { fromWallId: 'w1', toWallId: 'w9', reversed: false, length: 4000, ...overrides };
+  }
+
+  it('moves an opening onto the wall that survived', () => {
+    const { openings } = rehomeMerged([door()], [merge()]);
+    expect(openings[0]).toMatchObject({ wallId: 'w9', offset: 1000 });
+  });
+
+  it('leaves alone an opening on a wall that was not merged', () => {
+    const elsewhere = door({ wallId: 'w5' });
+    const { openings } = rehomeMerged([elsewhere], [merge()]);
+    expect(openings[0]).toBe(elsewhere);
+  });
+
+  it('measures from the other end when the surviving wall runs the other way', () => {
+    const { openings } = rehomeMerged([door({ offset: 1000 })], [merge({ reversed: true })]);
+    expect(openings[0]).toMatchObject({ wallId: 'w9', offset: 3000 });
+  });
+
+  it('turns the hinge and the swing round with it', () => {
+    // The part that is easy to forget and impossible to miss once it is wrong:
+    // hinge and side are both measured from the wall's own a-to-b direction,
+    // so a wall pointing the other way puts the door on the wrong side of the
+    // opening, swinging into the room next door.
+    const { openings } = rehomeMerged(
+      [door({ hinge: 'a', side: 'right' })],
+      [merge({ reversed: true })],
+    );
+
+    expect(openings[0]).toMatchObject({ hinge: 'b', side: 'left' });
+  });
+
+  it('leaves the hinge alone when the wall runs the same way', () => {
+    const { openings } = rehomeMerged([door({ hinge: 'a', side: 'right' })], [merge()]);
+    expect(openings[0]).toMatchObject({ hinge: 'a', side: 'right' });
+  });
+
+  it('nudges an opening that would now hang off the end, and says it did', () => {
+    const result = rehomeMerged([door({ offset: 3900, width: 900 })], [merge()]);
+    expect(result.openings[0]!.offset).toBe(3550);
+    expect(result.moved).toEqual(['o1']);
+  });
+
+  it('drops an opening wider than the wall it is moving to, and says so', () => {
+    const result = rehomeMerged([door({ width: 1200 })], [merge({ length: 1000 })]);
+    expect(result.openings).toEqual([]);
+    expect(result.dropped).toEqual(['o1']);
+  });
+
+  it('does nothing at all when nothing merged', () => {
+    const openings = [door()];
+    expect(rehomeMerged(openings, []).openings).toBe(openings);
   });
 });

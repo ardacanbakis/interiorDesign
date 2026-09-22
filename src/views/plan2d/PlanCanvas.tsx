@@ -15,6 +15,7 @@ import { drawRoomRect, drawWallRun, setWallLength } from '../../core/graph/opera
 import { getDefinition } from '../../core/catalog/registry.ts';
 import { type Item } from '../../core/model/schema.ts';
 import { roomsOf } from '../../core/model/derive.ts';
+import { alignRoomStep, planRoomMove } from '../../core/model/moveRoom.ts';
 import { activeIssues, issuesAbout } from '../../core/rules/engine.ts';
 import { applyGraphEdit } from '../../core/model/edits.ts';
 import { parseLength } from '../../core/units/length.ts';
@@ -127,6 +128,7 @@ export function PlanCanvas() {
   const addItem = useEditorStore((state) => state.addItem);
   const updateItem = useEditorStore((state) => state.updateItem);
   const moveRoom = useEditorStore((state) => state.moveRoom);
+  const joinRooms = useEditorStore((state) => state.joinRooms);
 
   const [interaction, setInteraction] = useState<Interaction>({ kind: 'idle' });
   const [snap, setSnap] = useState<Snap | null>(null);
@@ -480,20 +482,38 @@ export function PlanCanvas() {
     }
 
     if (interaction.kind === 'drag-room') {
+      if (!floor) return;
+
       const wanted = roomDragStep(
         interaction.start,
         raw,
         gridSpacing(viewport).minor,
         event.altKey,
       );
-      const step = { x: wanted.x - interaction.applied.x, y: wanted.y - interaction.applied.y };
+      let step = { x: wanted.x - interaction.applied.x, y: wanted.y - interaction.applied.y };
 
-      // Below the grid step the drag has not yet reached the next stop, so
-      // there is nothing to commit and nothing to record on the undo stack.
+      // Lining up beats the grid. Landing exactly on a neighbour's wall is what
+      // turns two rooms into one house, and a grid stop 20mm short of it would
+      // make that a matter of luck. Measured from where the room is now, so the
+      // answer stays honest as it moves.
+      const move = event.altKey ? null : planRoomMove(floor, interaction.roomId);
+      const aligned = move
+        ? alignRoomStep(floor, move, step, screenPixels(viewport, 10))
+        : { step, guides: [] };
+
+      step = { x: Math.round(aligned.step.x), y: Math.round(aligned.step.y) };
+      setItemGuides(aligned.guides);
+
+      // Below the next stop the drag has not reached it yet, so there is
+      // nothing to commit and nothing to record on the undo stack.
       if (step.x === 0 && step.y === 0) return;
 
       moveRoom(interaction.roomId, step, `drag-room:${interaction.roomId}`);
-      setInteraction({ ...interaction, applied: wanted, moved: true });
+      setInteraction({
+        ...interaction,
+        applied: { x: interaction.applied.x + step.x, y: interaction.applied.y + step.y },
+        moved: true,
+      });
       return;
     }
 
@@ -553,11 +573,24 @@ export function PlanCanvas() {
       return;
     }
 
-    if (
-      interaction.kind === 'pan' ||
-      interaction.kind === 'drag-node' ||
-      interaction.kind === 'drag-room'
-    ) {
+    if (interaction.kind === 'drag-room') {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+
+      // Put down against a neighbour, the two are now one building. Joining on
+      // release rather than during the drag is deliberate: welding rearranges
+      // wall ids, and doing that on every pointer move would churn the whole
+      // graph while nothing is even settled yet.
+      if (interaction.moved) joinRooms(`drag-room:${interaction.roomId}`);
+
+      setInteraction({ kind: 'idle' });
+      setItemGuides([]);
+      setSnap(null);
+      return;
+    }
+
+    if (interaction.kind === 'pan' || interaction.kind === 'drag-node') {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
@@ -815,7 +848,11 @@ export function PlanCanvas() {
 
           <ItemGuides
             guides={
-              tool === 'place-item' || interaction.kind === 'drag-item' ? itemGuides : EMPTY_GUIDES
+              tool === 'place-item' ||
+              interaction.kind === 'drag-item' ||
+              interaction.kind === 'drag-room'
+                ? itemGuides
+                : EMPTY_GUIDES
             }
             viewport={viewport}
           />

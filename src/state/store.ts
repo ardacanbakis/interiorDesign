@@ -17,7 +17,9 @@ import { create } from 'zustand';
 
 import { reconcileFloor } from '../core/model/derive.ts';
 import { moveRoomBy } from '../core/model/moveRoom.ts';
-import { applyGraphEdit } from '../core/model/edits.ts';
+import { applyGraphEdit, applyWeld } from '../core/model/edits.ts';
+import { weld } from '../core/graph/weld.ts';
+import { separateRoom } from '../core/model/separateRoom.ts';
 import { createDocument, findFloor } from '../core/model/document.ts';
 import {
   type FloorId,
@@ -221,6 +223,27 @@ export interface EditorStore {
     delta: { readonly x: Mm; readonly y: Mm },
     coalesceKey?: string,
   ) => void;
+
+  /**
+   * Join up anything that has been pushed into the same place.
+   *
+   * Run after a room is dropped, so that sliding one room against another
+   * leaves them genuinely sharing a wall rather than with two walls on the same
+   * line. Does nothing when there is nothing coincident, which is every other
+   * time. Takes the same `coalesceKey` as the drag that caused it, so the move
+   * and the join it produced are one undo.
+   */
+  joinRooms: (coalesceKey?: string) => void;
+
+  /**
+   * Take a room back out of the house it was joined into.
+   *
+   * The inverse of {@link EditorStore.joinRooms}, and the reason joining is
+   * safe to try: once two rooms share a wall they move as one, so without a way
+   * back, pushing them together would be a decision you could only undo until
+   * the session ended.
+   */
+  separateRoom: (roomId: RoomId) => void;
 
   /**
    * Which size each opening tool will place next.
@@ -516,6 +539,52 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
       },
       coalesceKey === undefined ? {} : { coalesceKey },
     );
+  },
+
+  joinRooms: (coalesceKey) => {
+    const floorId = get().activeFloorId;
+    const floor = get().document.floors.find((entry) => entry.id === floorId);
+    if (!floor) return;
+
+    const welded = weld(floor.graph);
+    if (welded.graph === floor.graph) return;
+
+    // Through `applyWeld` rather than assigning the graph, so a door on a wall
+    // that was cut or merged ends up on whatever is now standing there.
+    const joined = applyWeld(floor, welded).floor;
+
+    get().commit(
+      'Join rooms',
+      (draft) => {
+        const target = draft.floors.find((entry) => entry.id === floorId);
+        if (!target) return;
+
+        target.graph = joined.graph;
+        target.openings = joined.openings;
+      },
+      coalesceKey === undefined ? {} : { coalesceKey },
+    );
+  },
+
+  separateRoom: (roomId) => {
+    const floorId = get().activeFloorId;
+    const floor = get().document.floors.find((entry) => entry.id === floorId);
+    if (!floor) return;
+
+    const separated = separateRoom(floor, roomId);
+    if (separated === floor) return;
+
+    get().commit('Separate room', (draft) => {
+      const target = draft.floors.find((entry) => entry.id === floorId);
+      if (!target) return;
+
+      target.graph = separated.graph;
+      target.rooms = separated.rooms;
+      target.openings = separated.openings;
+      target.items = separated.items;
+    });
+
+    get().select([{ kind: 'room', id: roomId }]);
   },
 
   setOpeningPreset: (presetId) => {

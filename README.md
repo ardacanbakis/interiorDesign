@@ -10,6 +10,8 @@ everyday objects whose every dimension is editable, and find out what will actua
 - **Draw a whole house**, floor by floor, with rectilinear walls at exact measurements.
 - **True shared walls** — two adjacent rooms share one wall of one thickness, and a door in it
   is one door, correct from both sides.
+- **Build a house by dragging rooms together** — push one room against another and the two walls
+  become one, with any door in them carried across. Push them apart again from the inspector.
 - **Rooms need not be rectangles** — type an L-shape's overall size and the corner taken out of
   it, and the walls come out exactly those measurements. Chimney breasts and stair bulkheads are
   ordinary, and a planner that only draws rectangles cannot describe most real houses.
